@@ -179,7 +179,7 @@ def cert(environ, start_response):
 
 def chall(environ, start_response):
     """ create new account """
-    with Challenge(DEBUG, get_url(environ), LOGGER) as challenge:
+    with Challenge(DEBUG, get_url(environ), LOGGER, environ['REMOTE_ADDR']) as challenge:
         if environ['REQUEST_METHOD'] == 'POST':
 
             request_body = get_request_body(environ)
