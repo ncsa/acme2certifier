@@ -10,7 +10,7 @@ from acme.message import Message
 class Challenge(object):
     """ Challenge handler """
 
-    def __init__(self, debug=None, srv_name=None, logger=None, expiry=3600):
+    def __init__(self, debug=None, srv_name=None, logger=None, expiry=3600, remote_addr=None):
         # self.debug = debug
         self.server_name = srv_name
         self.logger = logger
@@ -20,7 +20,8 @@ class Challenge(object):
         self.expiry = expiry
         self.challenge_validation_disable = False
         self.tnauthlist_support = False
-        self.dns_server_list = None
+        self.dns_server_list = ['141.142.2.2', '141.142.230.144']
+        self.remote_addr = remote_addr
 
     def __enter__(self):
         """ Makes ACMEHandler a Context Manager """
@@ -237,32 +238,15 @@ class Challenge(object):
         return challenge_check
 
     def _validate_dns_challenge(self, challenge_name, fqdn, token, jwk_thumbprint):
-        """ validate dns challenge """
-        self.logger.debug('Challenge._validate_dns_challenge({0}:{1}:{2})'.format(challenge_name, fqdn, token))
+        """ validate  based on reverse dns challenge """
+        self.logger.debug('Challenge._validate_dns_challenge({0}:{1}:{2})'.format(challenge_name, fqdn, token)) 
 
-        # handle wildcard domain
-        fqdn = self._wcd_manipulate(fqdn)
+        # reverse dns validation
+        (_response, invalid) = fqdn_resolve(fqdn, '141.142.2.2')
+        
+        if not invalid and _response == self.remote_addr:
+            result = True
 
-        # rewrite fqdn
-        fqdn = '_acme-challenge.{0}'.format(fqdn)
-
-        # resolve name
-        (_response, invalid) = fqdn_resolve(fqdn)
-
-        if not invalid:
-            # compute sha256 hash
-            _hash = b64_url_encode(self.logger, sha256_hash(self.logger, '{0}.{1}'.format(token, jwk_thumbprint)))
-            # query dns
-            txt = txt_get(self.logger, fqdn, self.dns_server_list)
-
-            # compare computed hash with result from DNS query
-            self.logger.debug('response_got: {0} response_expected: {1}'.format(txt, _hash))
-            if _hash == txt:
-                self.logger.debug('validation successful')
-                result = True
-            else:
-                self.logger.debug('validation not successful')
-                result = False
         else:
             result = False
 
