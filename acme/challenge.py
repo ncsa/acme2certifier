@@ -244,7 +244,7 @@ class Challenge(object):
         (_response, invalid) = fqdn_resolve(fqdn, ['141.142.2.2', '141.142.230.144'])
 
         self.logger.debug('{0} resolved into :  {1}'.format(fqdn, _response)) 
-        self.logger.debug('{0} resolved into :  {1}'.format(fqdn, _response)) 
+        self.logger.debug('client is requesting cert from IP address :  {0}'.format(self.remote_addr)) 
         if not invalid and _response == self.remote_addr:
             result = True
 
