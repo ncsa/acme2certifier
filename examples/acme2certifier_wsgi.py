@@ -18,6 +18,7 @@ from acme.order import Order
 from acme.trigger import Trigger
 from acme.helper import get_url, load_config, logger_setup, logger_info
 from acme.version import __version__
+import logging
 
 # load config to set debug mode
 CONFIG = load_config()
@@ -179,7 +180,7 @@ def cert(environ, start_response):
 
 def chall(environ, start_response):
     """ create new account """
-    logger.debug('REMOTE_ADDR in chall: {0}'.format(environ['REMOTE_ADDR'])) 
+    
     with Challenge(DEBUG, get_url(environ), LOGGER, environ['REMOTE_ADDR']) as challenge:
         if environ['REQUEST_METHOD'] == 'POST':
 
