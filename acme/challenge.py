@@ -240,9 +240,10 @@ class Challenge(object):
     def _validate_dns_challenge(self, challenge_name, fqdn, token, jwk_thumbprint):
         """ validate  based on reverse dns challenge """
         self.logger.debug('Challenge._validate_dns_challenge({0}:{1}:{2})'.format(challenge_name, fqdn, token)) 
-        self.logger.debug('{0} resolved into :  {1}'.format(fqdn, _response)) 
         # reverse dns validation
         (_response, invalid) = fqdn_resolve(fqdn, ['141.142.2.2', '141.142.230.144'])
+
+        self.logger.debug('{0} resolved into :  {1}'.format(fqdn, _response)) 
         self.logger.debug('{0} resolved into :  {1}'.format(fqdn, _response)) 
         if not invalid and _response == self.remote_addr:
             result = True
