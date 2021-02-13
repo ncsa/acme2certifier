@@ -254,7 +254,6 @@ class Challenge(object):
             result = False
             self.logger.debug('REVERSE DNS VALIDATION = FAILED') 
 
-
         self.logger.debug('Challenge._validate_dns_challenge() ended with: {0}/{1}'.format(result, invalid))
         return (result, invalid)
 
