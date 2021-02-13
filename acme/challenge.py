@@ -3,6 +3,7 @@
 """ Challenge class """
 from __future__ import print_function
 import json
+import config
 from acme.helper import generate_random_string, parse_url, load_config, jwk_thumbprint_get, url_get, sha256_hash, b64_url_encode, txt_get, fqdn_resolve, uts_now, uts_to_date_utc
 from acme.db_handler import DBstore
 from acme.message import Message
@@ -10,7 +11,7 @@ from acme.message import Message
 class Challenge(object):
     """ Challenge handler """
 
-    def __init__(self, debug=None, srv_name=None, logger=None, expiry=3600, remote_addr=None):
+    def __init__(self, debug=None, srv_name=None, logger=None, expiry=3600):
         # self.debug = debug
         self.server_name = srv_name
         self.logger = logger
@@ -21,7 +22,6 @@ class Challenge(object):
         self.challenge_validation_disable = False
         self.tnauthlist_support = False
         self.dns_server_list = ['141.142.2.2', '141.142.230.144']
-        self.remote_addr = remote_addr
 
     def __enter__(self):
         """ Makes ACMEHandler a Context Manager """
@@ -238,18 +238,22 @@ class Challenge(object):
         return challenge_check
 
     def _validate_dns_challenge(self, challenge_name, fqdn, token, jwk_thumbprint):
-        """ validate  based on reverse dns challenge """
+        """ validate  based on reverse dns challenge for specific use case"""
         self.logger.debug('Challenge._validate_dns_challenge({0}:{1}:{2})'.format(challenge_name, fqdn, token)) 
         # reverse dns validation
         (_response, invalid) = fqdn_resolve(fqdn, ['141.142.2.2', '141.142.230.144'])
 
         self.logger.debug('{0} resolved into :  {1}'.format(fqdn, _response)) 
-        self.logger.debug('client is requesting cert from IP address :  {0}'.format(self.remote_addr)) 
-        if not invalid and _response == self.remote_addr:
+        self.logger.debug('client is requesting cert from IP address :  {0}'.format(config.remote_addr)) 
+        
+        # getting remote address from acme2certifier_wsgi.py using config.remote_addr 
+        if not invalid and _response == config.remote_addr:
             result = True
-
+            self.logger.debug('REVERSE DNS VALIDATION = SUCCESSFUL') 
         else:
             result = False
+            self.logger.debug('REVERSE DNS VALIDATION = FAILED') 
+
 
         self.logger.debug('Challenge._validate_dns_challenge() ended with: {0}/{1}'.format(result, invalid))
         return (result, invalid)

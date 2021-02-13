@@ -6,7 +6,6 @@ from __future__ import print_function
 import re
 import json
 import sys
-import config
 from wsgiref.simple_server import make_server, WSGIRequestHandler
 from acme.account import Account
 from acme.authorization import Authorization
@@ -181,8 +180,8 @@ def cert(environ, start_response):
 
 def chall(environ, start_response):
     """ create new account """
-    config.remote_addr = environ['REMOTE_ADDR']
-    with Challenge(DEBUG, get_url(environ), LOGGER) as challenge:
+    
+    with Challenge(DEBUG, get_url(environ), LOGGER, environ['REMOTE_ADDR']) as challenge:
         if environ['REQUEST_METHOD'] == 'POST':
 
             request_body = get_request_body(environ)
