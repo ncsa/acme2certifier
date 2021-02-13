@@ -19,7 +19,6 @@ from acme.order import Order
 from acme.trigger import Trigger
 from acme.helper import get_url, load_config, logger_setup, logger_info
 from acme.version import __version__
-import logging
 
 # load config to set debug mode
 CONFIG = load_config()
