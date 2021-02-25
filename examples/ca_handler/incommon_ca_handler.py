@@ -107,15 +107,19 @@ class CAhandler(object):
         self.logger.debug('Fetching certificate from InCommon (rawdata) : {0}'.format(rawdata))
 
         # Generating a certificate bundle in PEM file format is not needed here
-        # InCommon responds with a certificate that is already base64 string encoded
-        # InCommon responds with an All-In-One SSLCertificateFile. 
+        # InCommon responds with an All-In-One certificate bundle that is already base64 string encoded
         # Root cert - Intermediate cert - Leaf cert (from top to bottom of response)
-        # Apache & NGINX web-servers expect it in REVERSE order meaning, Leaf is first, then intermediate then root cert. 
-        # We use the python pem package below to flip the order of certificate in the bundle before sending down the final response back to client
+        # Apache & NGINX web-servers expect it in REVERSE order meaning - Leaf is first, then intermediate then root cert. 
+        # We use the python pem package below to parse & flip the order of certificate in the bundle before sending down the final response back to client
+        # Make sure the pem python package is installed on the acme-responder (pip3 install pem)
         # The client (which is using certbot) receives a fullchain.pem file which contains the cert bundle
-        # End user will point their webserver config to this fullchain.pem file
+        # End user will point their webserver ssl config to this fullchain.pem file
 
-        cert_bundle = rawdata
+        #cert_bundle = rawdata
+        
+        certs = pem.parse(str.encode(rawdata))
+        cert_bundle = str(certs[3])+ '\n' + str(certs[1]) + str(certs[2]) + str(certs[0])
+        
         poll_identifier = str(json_response['sslId'])
 
         self.logger.debug('Certificate.enroll() ended')
