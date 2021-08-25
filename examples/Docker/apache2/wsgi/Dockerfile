@@ -9,7 +9,7 @@ RUN apt-get install --no-install-recommends -y \
     apache2-data \
     libapache2-mod-wsgi-py3 \
     curl \
-    python3-cryptography \    
+    python3-cryptography \
  && rm -rf /var/lib/apt/lists/*
 
 # install python requirements
@@ -27,10 +27,11 @@ RUN mkdir -p /var/www/acme2certifier/volume && \
 COPY examples/apache_wsgi.conf /etc/apache2/sites-enabled/acme2certifier.conf
 COPY examples/acme2certifier_wsgi.py /var/www/acme2certifier/acme2certifier_wsgi.py
 COPY examples/ca_handler/ /var/www/acme2certifier/examples/ca_handler
+COPY examples/eab_handler/ /var/www/acme2certifier/examples/eab_handler
 COPY examples/acme_srv.cfg /var/www/acme2certifier/examples/
 COPY examples/apache_wsgi_ssl.conf /var/www/acme2certifier/examples/
-COPY examples/db_handler/wsgi_handler.py /var/www/acme2certifier/acme/db_handler.py
-COPY acme/ /var/www/acme2certifier/acme
+COPY examples/db_handler/wsgi_handler.py /var/www/acme2certifier/acme_srv/db_handler.py
+COPY acme_srv/ /var/www/acme2certifier/acme_srv
 COPY tools/ /var/www/acme2certifier/tools
 RUN chown -R www-data:www-data /var/www/acme2certifier/
 

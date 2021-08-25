@@ -14,7 +14,7 @@ def initialize():
     # pylint: disable=E1101
     django.setup()
 initialize()
-from acme.models import Account, Authorization, Certificate, Challenge, Housekeeping, Nonce, Order, Status
+from acme_srv.models import Account, Authorization, Cahandler, Certificate, Challenge, Housekeeping, Nonce, Order, Status
 
 class DBstore(object):
     """ helper to do datebase operations """
@@ -81,10 +81,10 @@ class DBstore(object):
         return obj.id
 
     def accountlist_get(self):
-        """ certificatelist_get """
-        self.logger.debug('DBStore.certificatelist_get()')
+        """ accountlist_get """
+        self.logger.debug('DBStore.accountlist_get()')
         vlist = [
-            'id', 'name', 'contact', 'created_at', 'jwk', 'alg', 'order__id', 'order__name', 'order__status__id', 'order__status__name',
+            'id', 'name', 'contact', 'eab_kid', 'created_at', 'jwk', 'alg', 'order__id', 'order__name', 'order__status__id', 'order__status__name',
             'order__notbefore', 'order__notafter', 'order__expires', 'order__identifiers', 'order__authorization__id', 'order__authorization__name',
             'order__authorization__type', 'order__authorization__value', 'order__authorization__expires', 'order__authorization__token',
             'order__authorization__created_at', 'order__authorization__status_id', 'order__authorization__status__id', 'order__authorization__status__name',
@@ -140,6 +140,30 @@ class DBstore(object):
 
         self.logger.debug('auth_id({0})'.format(obj.id))
         return obj.id
+
+    def cahandler_add(self, data_dic):
+        """ add cahandler to database """
+        self.logger.debug('DBStore.cahandler_add({0})'.format(data_dic))
+        cahandler_list = self.cahandler_lookup('name', data_dic['name'])
+        if cahandler_list:
+            created = False
+            cname = cahandler_list['name']
+        else:
+            obj, created = Cahandler.objects.update_or_create(name=data_dic['name'], defaults=data_dic)
+            obj.save()
+            cname = data_dic['name']
+        return (cname, created)
+
+    def cahandler_lookup(self, mkey, value):
+        """ search cahandler for a given id """
+        self.logger.debug('DBStore.cahandler_lookup({0}:{1})'.format(mkey, value))
+        cahandler_dict = Cahandler.objects.filter(**{mkey: value}).values('name', 'value1', 'value2', 'created_at')[:1]
+        if cahandler_dict:
+            result = cahandler_dict[0]
+        else:
+            result = None
+        return result
+
 
     def challenge_add(self, data_dic):
         """ add challenge to database """
@@ -200,7 +224,7 @@ class DBstore(object):
         vlist = [
             'id', 'name', 'cert_raw', 'csr', 'poll_identifier', 'created_at', 'issue_uts', 'expire_uts',
             'order__id', 'order__name', 'order__status__name', 'order__notbefore', 'order__notafter', 'order__expires', 'order__identifiers',
-            'order__account__name', 'order__account__contact', 'order__account__created_at', 'order__account__jwk', 'order__account__alg'
+            'order__account__name', 'order__account__contact', 'order__account__created_at', 'order__account__jwk', 'order__account__alg', 'order__account__eab_kid'
             ]
         # for historical reason cert_raw an be NULL or ''; we have to consider both cases during selection
         return(vlist, list(Certificate.objects.filter(cert_raw__isnull=False).exclude(cert_raw='').values(*vlist)))
@@ -267,6 +291,23 @@ class DBstore(object):
             result = None
         self.logger.debug('DBStore.dbversion_get() ended with {0}'.format(result))
         return (result, 'tools/django_update.py')
+
+    def hkparameter_add(self, data_dic):
+        """ add housekeeping paramter to database """
+        self.logger.debug('DBStore.hkparameter_add({0})'.format(data_dic))
+        obj, created = Housekeeping.objects.update_or_create(name=data_dic['name'], defaults=data_dic)
+        obj.save()
+
+    def hkparameter_get(self, parameter):
+        """ get parameter from housekeeping table """
+        self.logger.debug('DBStore.hkparameter_get()')
+        result_list = Housekeeping.objects.filter(name=parameter).values_list('value', flat=True)
+        if result_list:
+            result = result_list[0]
+        else:
+            result = None
+        self.logger.debug('DBStore.hkparameter_get() ended with {0}'.format(result))
+        return result
 
     def jwk_load(self, aname):
         """ looad account informatino and build jwk key dictionary """

@@ -9,7 +9,7 @@ RUN apt-get install --no-install-recommends -y \
     uwsgi \
     uwsgi-plugin-python3 \
     curl \
-    python3-cryptography \    
+    python3-cryptography \
 && rm -rf /var/lib/apt/lists/*
 
 # install python requirements
@@ -24,17 +24,18 @@ RUN mkdir -p /var/www/acme2certifier/volume && \
 
 COPY examples/acme2certifier_wsgi.py /var/www/acme2certifier/acme2certifier_wsgi.py
 COPY examples/ca_handler/ /var/www/acme2certifier/examples/ca_handler
+COPY examples/eab_handler/ /var/www/acme2certifier/examples/eab_handler
 COPY examples/nginx/ /var/www/acme2certifier/examples/nginx
 COPY examples/acme_srv.cfg /var/www/acme2certifier/examples/
-COPY acme/ /var/www/acme2certifier/acme
+COPY acme_srv/ /var/www/acme2certifier/acme_srv
 COPY tools/ /var/www/acme2certifier/tools
-COPY examples/db_handler/wsgi_handler.py /var/www/acme2certifier/acme/db_handler.py
+COPY examples/db_handler/wsgi_handler.py /var/www/acme2certifier/acme_srv/db_handler.py
 COPY examples/nginx/acme2certifier.ini /var/www/acme2certifier
-COPY examples/nginx/nginx_acme.conf /etc/nginx/sites-available/acme.conf
+COPY examples/nginx/nginx_acme_srv.conf /etc/nginx/sites-available/acme_srv.conf
 COPY examples/nginx/supervisord.conf /etc
-RUN  chown -R www-data /var/www/acme2certifier/acme && \
+RUN  chown -R www-data /var/www/acme2certifier/acme_srv && \
      rm /etc/nginx/sites-enabled/default && \
-     ln -s /etc/nginx/sites-available/acme.conf /etc/nginx/sites-enabled/acme.conf
+     ln -s /etc/nginx/sites-available/acme_srv.conf /etc/nginx/sites-enabled/acme_srv.conf
 
 
 COPY examples/Docker/nginx/wsgi/docker-entrypoint.sh /docker-entrypoint.sh

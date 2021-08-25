@@ -20,13 +20,13 @@ class TestACMEHandler(unittest.TestCase):
     def setUp(self):
         """ setup unittest """
         models_mock = MagicMock()
-        models_mock.acme.db_handler.DBstore.return_value = FakeDBStore
-        modules = {'acme.db_handler': models_mock}
+        models_mock.acme_srv.db_handler.DBstore.return_value = FakeDBStore
+        modules = {'acme_srv.db_handler': models_mock}
         patch.dict('sys.modules', modules).start()
         import logging
         logging.basicConfig(level=logging.CRITICAL)
         self.logger = logging.getLogger('test_a2c')
-        from acme.nonce import Nonce
+        from acme_srv.nonce import Nonce
         self.nonce = Nonce(False, self.logger)
 
     def test_001_nonce__new(self):
@@ -70,6 +70,10 @@ class TestACMEHandler(unittest.TestCase):
         with self.assertLogs('test_a2c', level='INFO') as lcm:
             self.nonce._check_and_delete('nonce')
         self.assertIn('CRITICAL:test_a2c:acme2certifier database error in Nonce._check_and_delete(): exc_nonce_check', lcm.output)
+
+    def test_009__enter_(self):
+        """ test enter """
+        self.nonce.__enter__()
 
 if __name__ == '__main__':
     unittest.main()

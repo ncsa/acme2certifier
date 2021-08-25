@@ -12,10 +12,10 @@
 - copy the ca_handler into the acme directory
 
 ```bash
-root@rlh:~# cp example/ca_handlers/certifier_ca_handler.py acme/ca_handler.py
+root@rlh:~# cp example/ca_handlers/certifier_ca_handler.py acme_srv/ca_handler.py
 ```
 
-- modify the server configuration (`/acme/acme_srv.cfg`) and add the following parameters
+- modify the server configuration (`/acme_srv/acme_srv.cfg`) and add the following parameters
 
 ```config
 [CAhandler]
@@ -29,12 +29,14 @@ polling_timeout: <seconds>
 
 - api_host - URL of the Certifier-REST service
 - api_user - REST user
+- api_user_variable - *optional* - name of the environment variable containing the REST username (a configured `api_user` parameter in acme_srv.cfg takes precedence)
 - api_password - password for REST user
+- api_password_variable - *optional* - name of the environment variable containing the password for the REST user (a configured `api_password` parameter in acme_srv.cfg takes precedence)
 - ca_bundle - optional - certificate bundle needed to validate the server certificate - can be True/False or a filename (default: True)
 - ca_name - name of the CA used to enroll certificates
-- polling_timeout - optinal - polling timeout (default: 60s)
+- polling_timeout - optional - polling timeout (default: 60s)
 
-Depending on CA policy configuration a CSR may require approval. In such a situation acme2certfier will poll the CA server to check the CSR status. The polling intervall can be configured in acme.server.cfg.
+Depending on CA policy configuration a CSR may require approval. In such a situation acme2certfier will poll the CA server to check the CSR status. The polling interval can be configured in acme.server.cfg.
 
 You can get the ca_name by running the following REST call against certifier.
 

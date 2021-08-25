@@ -16,13 +16,29 @@ Including another URLconf
 # pylint: disable=C0330
 from django.conf.urls import include, url
 from django.contrib import admin
-from acme import views
+from acme_srv import views
+from acme_srv.helper import load_config
+
+# load config to set url_prefix
+CONFIG = load_config()
+
+# check ifwe need to prefix the url
+if 'Directory' in CONFIG and 'url_prefix' in CONFIG['Directory']:
+    prefix = CONFIG['Directory']['url_prefix'] + '/'
+    if prefix.startswith('/'):
+        prefix = prefix.lstrip('/')
+else:
+    prefix = ''
 
 urlpatterns = [
     url(r'^admin/', admin.site.urls),
     url(r'^$', views.directory, name='index'),
 	url(r'^directory$', views.directory, name='directory'),
-	url(r'^get_servername$', views.servername_get, name='servername_get'),
-	url(r'^trigger$', views.trigger, name='trigger'),
-    url(r'^acme/', include('acme.urls')),
+	url(r'^{0}get_servername$'.format(prefix), views.servername_get, name='servername_get'),
+	url(r'^{0}trigger$'.format(prefix), views.trigger, name='trigger'),
+    url(r'^{0}acme/'.format(prefix), include('acme_srv.urls'))
 ]
+
+# check if we need to activate the url pattern for challenge verification
+if 'CAhandler' in CONFIG and 'acme_url' in CONFIG['CAhandler']:
+    urlpatterns.append(url(r'^{0}.well-known/acme-challenge/'.format(prefix), views.acmechallenge_serve, name='acmechallenge_serve'))

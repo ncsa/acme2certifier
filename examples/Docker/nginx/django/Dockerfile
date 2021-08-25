@@ -13,16 +13,17 @@ RUN apt-get install --no-install-recommends -y \
     python3-django \
     python3-mysqldb \
     python3-pymysql \
+    python3-psycopg2 \
     python3-yaml \
-    python3-cryptography \    
+    python3-cryptography \
  && rm -rf /var/lib/apt/lists/*
 
 # install python requirements
 COPY requirements.txt /tmp/requirements.txt
-RUN pip3 install -r /tmp/requirements.txt
+# RUN pip3 install -r /tmp/requirements.txt
 
 RUN pip3 install -r /tmp/requirements.txt && \
-    pip3 install supervisor
+    pip3 install supervisor django_rename_app
 
 # create folders for acme2certifier
 RUN mkdir -p /var/www/acme2certifier/volume && \
@@ -32,17 +33,18 @@ RUN mkdir -p /var/www/acme2certifier/volume && \
 COPY examples/django/ /var/www/acme2certifier/
 COPY examples/django/ /var/www/acme2certifier/examples/django
 COPY examples/ca_handler/ /var/www/acme2certifier/examples/ca_handler
+COPY examples/eab_handler/ /var/www/acme2certifier/examples/eab_handler
 COPY examples/acme_srv.cfg /var/www/acme2certifier/examples/
 COPY examples/nginx/ /var/www/acme2certifier/examples/nginx
-COPY acme/ /var/www/acme2certifier/acme
+COPY acme_srv/ /var/www/acme2certifier/acme_srv
 COPY tools/ /var/www/acme2certifier/tools
-COPY examples/db_handler/django_handler.py /var/www/acme2certifier/acme/db_handler.py
+COPY examples/db_handler/django_handler.py /var/www/acme2certifier/acme_srv/db_handler.py
 COPY examples/nginx/acme2certifier.ini /var/www/acme2certifier
-COPY examples/nginx/nginx_acme.conf /etc/nginx/sites-available/acme.conf
+COPY examples/nginx/nginx_acme_srv.conf /etc/nginx/sites-available/acme_srv.conf
 COPY examples/nginx/supervisord.conf /etc
-RUN  chown -R www-data /var/www/acme2certifier/acme && \
+RUN  chown -R www-data /var/www/acme2certifier/acme_srv && \
      rm /etc/nginx/sites-enabled/default && \
-     ln -s /etc/nginx/sites-available/acme.conf /etc/nginx/sites-enabled/acme.conf
+     ln -s /etc/nginx/sites-available/acme_srv.conf /etc/nginx/sites-enabled/acme_srv.conf
 
 RUN chown -R www-data:www-data /var/www/acme2certifier/
 RUN rm /var/www/acme2certifier/acme2certifier/settings.py && \

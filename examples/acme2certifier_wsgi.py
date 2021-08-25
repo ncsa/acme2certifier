@@ -7,17 +7,18 @@ import re
 import json
 import sys
 from wsgiref.simple_server import make_server, WSGIRequestHandler
-from acme.account import Account
-from acme.authorization import Authorization
-from acme.certificate import Certificate
-from acme.challenge import Challenge
-from acme.directory import Directory
-from acme.housekeeping import Housekeeping
-from acme.nonce import Nonce
-from acme.order import Order
-from acme.trigger import Trigger
-from acme.helper import get_url, load_config, logger_setup, logger_info
-from acme.version import __version__
+from acme_srv.account import Account
+from acme_srv.acmechallenge import Acmechallenge
+from acme_srv.authorization import Authorization
+from acme_srv.certificate import Certificate
+from acme_srv.challenge import Challenge
+from acme_srv.directory import Directory
+from acme_srv.housekeeping import Housekeeping
+from acme_srv.nonce import Nonce
+from acme_srv.order import Order
+from acme_srv.trigger import Trigger
+from acme_srv.helper import get_url, load_config, logger_setup, logger_info
+from acme_srv.version import __dbversion__, __version__
 
 # load config to set debug mode
 CONFIG = load_config()
@@ -39,7 +40,7 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 LOGGER = logger_setup(DEBUG)
 
 with Housekeeping(DEBUG, LOGGER) as housekeeping:
-    housekeeping.dbversion_check(__version__)
+    housekeeping.dbversion_check(__dbversion__)
 
 # examption handling via logger
 sys.excepthook = handle_exception
@@ -88,9 +89,22 @@ def acct(environ, start_response):
         start_response('{0} {1}'.format(response_dic['code'], HTTP_CODE_DIC[response_dic['code']]), headers)
         return [json.dumps(response_dic['data']).encode('utf-8')]
 
+def acmechallenge_serve(environ, start_response):
+    """ directory listing """
+    with Acmechallenge(DEBUG, get_url(environ), LOGGER) as acmechallenge:
+        request_body = get_request_body(environ)
+        key_authorization = acmechallenge.lookup(environ['PATH_INFO'])
+        if not key_authorization:
+            key_authorization = 'NOT FOUND'
+            start_response('404 {0}'.format(HTTP_CODE_DIC[404]), [('Content-Type', 'text/html')])
+        else:
+            start_response('200 {0}'.format(HTTP_CODE_DIC[200]), [('Content-Type', 'text/html')])
+        # logging
+        logger_info(LOGGER, environ['REMOTE_ADDR'], environ['PATH_INFO'], {})
+        return [key_authorization.encode('utf-8')]
 
 def authz(environ, start_response):
-    """ account handling """
+    """ authorization handling """
     if environ['REQUEST_METHOD'] == 'POST' or environ['REQUEST_METHOD'] == 'GET':
         with Authorization(DEBUG, get_url(environ), LOGGER) as authorization:
             if environ['REQUEST_METHOD'] == 'POST':
@@ -122,17 +136,17 @@ def newaccount(environ, start_response):
     """ create new account """
     if environ['REQUEST_METHOD'] == 'POST':
 
-        account = Account(DEBUG, get_url(environ), LOGGER)
-        request_body = get_request_body(environ)
-        response_dic = account.new(request_body)
+        with Account(DEBUG, get_url(environ), LOGGER) as account:
+            request_body = get_request_body(environ)
+            response_dic = account.new(request_body)
 
-        # create header
-        headers = create_header(response_dic)
-        start_response('{0} {1}'.format(response_dic['code'], HTTP_CODE_DIC[response_dic['code']]), headers)
+            # create header
+            headers = create_header(response_dic)
+            start_response('{0} {1}'.format(response_dic['code'], HTTP_CODE_DIC[response_dic['code']]), headers)
 
-        # logging
-        logger_info(LOGGER, environ['REMOTE_ADDR'], environ['PATH_INFO'], response_dic)
-        return [json.dumps(response_dic['data']).encode('utf-8')]
+            # logging
+            logger_info(LOGGER, environ['REMOTE_ADDR'], environ['PATH_INFO'], response_dic)
+            return [json.dumps(response_dic['data']).encode('utf-8')]
 
     else:
         start_response('405 {0}'.format(HTTP_CODE_DIC[405]), [('Content-Type', 'application/json')])
@@ -213,14 +227,15 @@ def chall(environ, start_response):
 
 def newnonce(environ, start_response):
     """ generate a new nonce """
-    if environ['REQUEST_METHOD'] == 'HEAD':
+    if environ['REQUEST_METHOD'] in ['HEAD', 'GET']:
         nonce = Nonce(DEBUG, LOGGER)
         headers = [('Content-Type', 'text/plain'), ('Replay-Nonce', '{0}'.format(nonce.generate_and_add()))]
-        start_response('200 OK', headers)
+        status = '200 OK' if environ['REQUEST_METHOD'] == 'HEAD' else '204 No content'
+        start_response(status, headers)
         return []
     else:
         start_response('405 {0}'.format(HTTP_CODE_DIC[405]), [('Content-Type', 'application/json')])
-        return [json.dumps({'status':405, 'message':HTTP_CODE_DIC[405], 'detail': 'Wrong request type. Expected HEAD.'}).encode('utf-8')]
+        return [json.dumps({'status':405, 'message':HTTP_CODE_DIC[405], 'detail': 'Wrong request type. Expected HEAD or GET.'}).encode('utf-8')]
 
 def neworders(environ, start_response):
     """ generate a new order """
@@ -329,7 +344,16 @@ URLS = [
 
 def application(environ, start_response):
     ''' The main WSGI application if nothing matches call the not_found function.'''
-    path = environ.get('PATH_INFO', '').lstrip('/')
+
+    # check if we need to activate the url pattern for challenge verification
+    if 'CAhandler' in CONFIG and 'acme_url' in CONFIG['CAhandler']:
+        URLS.append((r'^.well-known/acme-challenge/', acmechallenge_serve))
+
+    prefix = '/'
+    if 'Directory' in CONFIG and 'url_prefix' in CONFIG['Directory']:
+        prefix = CONFIG['Directory']['url_prefix'] + '/'
+    path = environ.get('PATH_INFO', '').lstrip(prefix)
+
     for regex, callback in URLS:
         match = re.search(regex, path)
         if match is not None:

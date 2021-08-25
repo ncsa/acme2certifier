@@ -6,33 +6,36 @@
 ![GitHub last commit (branch)](https://img.shields.io/github/last-commit/grindsa/acme2certifier/devel.svg?label=last%20commit%20into%20devel)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/2581/badge)](https://bestpractices.coreinfrastructure.org/projects/2581)
 
+[![Codecov main](https://img.shields.io/codecov/c/gh/grindsa/acme2certifier/branch/master?label=test%20coverage%20master)](https://app.codecov.io/gh/grindsa/acme2certifier/branch/master)
+[![Codecov devel](https://img.shields.io/codecov/c/gh/grindsa/acme2certifier/branch/devel?label=test%20coverage%20devel)](https://app.codecov.io/gh/grindsa/acme2certifier/branch/devel)
+
 acme2certifier is development project to create an ACME protocol proxy. Main
 intention is to provide ACME services on CA servers which do not support this
 protocol yet. It consists of two libraries:
 
-- acme/*.py - a bunch of classes implementing ACME server functionality based
+- acme_srv/*.py - a bunch of classes implementing ACME server functionality based
 on [rfc8555](https://tools.ietf.org/html/rfc8555)
 - ca_handler.py - interface towards CA server. The intention of this library
 is to be modular that an [adaption to other CA servers](docs/ca_handler.md)
 should be straight forward. As of today the following handlers are available:
   - [Openssl](docs/openssl.md)
-  - [NetGuard Certificate Manager/Insta certifier](docs/certifier.md)
+  - [NetGuard Certificate Manager/Insta Certifier](docs/certifier.md)
   - [NetGuard Certificate Lifecycle Manager](docs/nclm.md)
   - [Generic EST protocol handler](docs/est.md)
   - [Generic CMPv2 protocol handler](docs/cmp.md)
   - [Microsoft Certificate Enrollment Web Services](docs/mscertsrv.md)
+  - [Generic ACME protocol handler supporting Letsencrypt, BuyPass.com and ZeroSSL](docs/acme_ca.md)
   - [XCA](docs/xca.md)
+  - [acme2dfn](https://github.com/pfisterer/acme2dfn) (external; ACME proxy for the [German research network's SOAP API](https://blog.pki.dfn.de/tag/soap-api/))
 
 For more up-to-date information and further documentation, please visit the
 project's home page at: [https://github.com/grindsa/acme2certifier](https://github.com/grindsa/acme2certifier)
 
 ## ChangeLog
 
-Releasenotes and ChangLog can be found at [https://github.com/grindsa/acme2certifier/releases](https://github.com/grindsa/acme2certifier/releases)
+Release notes and ChangLog can be found at [https://github.com/grindsa/acme2certifier/releases](https://github.com/grindsa/acme2certifier/releases)
 
 ## Disclaimer
-
-I am running this project as my RnD guys told me that it won’t be possible :-)
 
 Following acme-clients are used for regular testing of server functionality
 
@@ -44,7 +47,7 @@ Following acme-clients are used for regular testing of server functionality
 - [win-acme](https://www.win-acme.com/)
 
 Other clients are on my list for later testing. In case you are bored, feel
-free to test other came ACME clients and raise [issues](https://github.com/grindsa/acme2certifier/issues/new)
+free to test other ACME clients and raise [issues](https://github.com/grindsa/acme2certifier/issues/new)
 if something does not work as expected.
 
 [Command-line parameters used for testing](docs/acme-clients.md)
@@ -54,13 +57,14 @@ code and don’t forget to send patches.
 
 ## Project status
 
-As of today acme2certifier supports the below ACME functions only:
+As of today acme2certifier supports the below ACME functions:
 
 - "directory" resource [(Section 7.1.1)](https://tools.ietf.org/html/rfc8555#section-7.1.1)
 - "newNonce" resource  [(Section 7.2)](https://tools.ietf.org/html/rfc8555#section-7.2)
 - "newAccount" resource [(Section 7.3)](https://tools.ietf.org/html/rfc8555#section-7.3)
   - Finding an Account URL Given a Key [(Section 7.3.1)](https://tools.ietf.org/html/rfc8555#section-7.3.1)
   - Account update [(Section 7.3.2)](https://tools.ietf.org/html/rfc8555#section-7.3.2)
+  - [Exernal Account Binding](docs/eab.md) [(Section 7.3.4)](https://tools.ietf.org/html/rfc8555#section-7.3.4)  
   - Key Rollover [(Section 7.3.5)](https://tools.ietf.org/html/rfc8555#section-7.3.5)
   - Account Deactivation [(Section 7.3.6)](https://tools.ietf.org/html/rfc8555#section-7.3.6)
 - "new-order" resource [(Section 7.4)](https://tools.ietf.org/html/rfc8555#section-7.4)
@@ -71,8 +75,8 @@ As of today acme2certifier supports the below ACME functions only:
 - "certificate revocation" [(Section 7.6)](https://tools.ietf.org/html/rfc8555#section-7.6)
 
 Starting from version 0.4 acme2certifer includes experimental support for
-[TNAuthList identifiers](https://tools.ietf.org/html/draft-ietf-acme-authority-token-tnauthlist-03)
-and [tkauth-01](https://tools.ietf.org/html/draft-ietf-acme-authority-token-03) challenges.
+[TNAuthList identifiers](https://tools.ietf.org/html/draft-ietf-acme-authority-token-tnauthlist-08)
+and [tkauth-01](https://tools.ietf.org/html/draft-ietf-acme-authority-token-05) challenges.
 Check [tnauthlist.md](docs/tnauthlist.md) for further information.
 
 Starting from version 0.8 acme2certifier supports [certificate polling](docs/poll.md)
@@ -80,15 +84,22 @@ and [call backs](docs/trigger.md) from CA servers. These calls are not standardi
 but important to use acme2certifier together with classical enterprise CA
 servers,
 
+Following challenge types are supported:
+
+- [http-01](https://tools.ietf.org/html/rfc8555#section-8.3)
+- [dns-01](https://tools.ietf.org/html/rfc8555#section-8.4)
+- [tls-alpn-01](https://tools.ietf.org/html/rfc8737)
+- [tkauth-01](https://tools.ietf.org/html/draft-ietf-acme-authority-token-05)
+
 Additional functionality will be added over time. If you are badly missing a
 certain feature please raise an [issue](https://github.com/grindsa/acme2certifier/issues/new)
 to let me know.
 
 ## Installation
 
-The proxy can run either as plain wsgi-script on either apache or ngix or as
+The proxy can run either as plain wsgi-script on either apache or nginx or as
 django project. Running acme2certifier as django project allows to use other
-database backendes than SQLite.
+database backends than SQLite.
 
 The fastest and most convenient way to install acme2certifier is to use docker
 containers.  There are ready made images available at [dockerhub](https://hub.docker.com/r/grindsa/acme2certifier) and [ghcr.io](https://github.com/users/grindsa/packages/container/acme2certifier/)

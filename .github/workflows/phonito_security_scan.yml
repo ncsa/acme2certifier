@@ -1,8 +1,12 @@
 name: phonito security scans
 on:
-  schedule:
-    # * daily checks at 05:00am
-    - cron:  '0 5 * * *'
+  # temporarily disable
+  push:
+    branches-ignore:
+      - '**'
+  #schedule:
+  #  # * daily checks at 05:00am
+  #  - cron:  '0 5 * * *'
 jobs:
 
   apache2_wsgi:
@@ -113,8 +117,8 @@ jobs:
       - name: "[ PREPARE ] nginx django container"
         run: |
           docker run -d -p 80:80 --rm -id --network acme --name=acme-srv -v "$(pwd)/examples/Docker/data":/var/www/acme2certifier/volume/ grindsa/acme2certifier:nginx-django
-          docker exec acme-srv python3 /var/www/acme2certifier/tools/django_update.py
-          sudo chmod a+w examples/Docker/data/db.sqlite3
+          # docker exec acme-srv python3 /var/www/acme2certifier/tools/django_update.py
+          # sudo chmod a+w examples/Docker/data/db.sqlite3
 
       - name: "[ SCAN ] Phonito Security Scan"
         uses: phonito/phonito-scanner-action@master
