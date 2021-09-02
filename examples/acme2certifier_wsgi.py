@@ -6,6 +6,7 @@ from __future__ import print_function
 import re
 import json
 import sys
+import config
 from wsgiref.simple_server import make_server, WSGIRequestHandler
 from acme_srv.account import Account
 from acme_srv.acmechallenge import Acmechallenge
@@ -193,6 +194,7 @@ def cert(environ, start_response):
 
 def chall(environ, start_response):
     """ create new account """
+    config.remote_addr = environ['REMOTE_ADDR']
     with Challenge(DEBUG, get_url(environ), LOGGER) as challenge:
         if environ['REQUEST_METHOD'] == 'POST':
 
@@ -375,7 +377,7 @@ def get_handler_cls():
 
 if __name__ == '__main__':
     LOGGER.info('starting acme2certifier version {0}'.format(__version__))
-    SRV = make_server('0.0.0.0', 80, application, handler_class=get_handler_cls())
+    SRV = make_server('0.0.0.0', 8080, application, handler_class=get_handler_cls())
     SRV.serve_forever()
 
 # start_response('403 {0}'.format(HTTP_CODE_DIC[403]), [('Content-Type', 'application/json')])

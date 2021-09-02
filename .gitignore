@@ -145,3 +145,7 @@ examples/Docker/data/*
 !examples/Docker/.env
 # acme/
 acme_srv/acme_srv.db.old.*
+
+# config file
+examples/acme_srv.cfg
+

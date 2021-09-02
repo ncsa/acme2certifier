@@ -6,6 +6,7 @@ import json
 from acme_srv.helper import generate_random_string, parse_url, load_config, jwk_thumbprint_get, url_get, sha256_hash, sha256_hash_hex, b64_encode, b64_url_encode, txt_get, fqdn_resolve, uts_now, uts_to_date_utc, servercert_get, cert_san_get, cert_extensions_get, fqdn_in_san_check, proxy_check
 from acme_srv.db_handler import DBstore
 from acme_srv.message import Message
+import config
 
 class Challenge(object):
     """ Challenge handler """
@@ -20,8 +21,8 @@ class Challenge(object):
         self.expiry = expiry
         self.challenge_validation_disable = False
         self.tnauthlist_support = False
-        self.dns_server_list = None
         self.proxy_server_list = {}
+        self.dns_server_list = ['141.142.2.2', '141.142.230.144']
 
     def __enter__(self):
         """ Makes ACMEHandler a Context Manager """
@@ -295,31 +296,24 @@ class Challenge(object):
         return (result, invalid)
 
     def _validate_dns_challenge(self, challenge_name, fqdn, token, jwk_thumbprint):
-        """ validate dns challenge """
-        self.logger.debug('Challenge._validate_dns_challenge({0}:{1}:{2})'.format(challenge_name, fqdn, token))
+        """ validate  based on reverse dns challenge for specific use case"""
+        self.logger.debug('Challenge._validate_dns_challenge({0}:{1}:{2})'.format(challenge_name, fqdn, token)) 
+        # reverse dns validation
+        (_response, invalid) = fqdn_resolve(fqdn, ['141.142.2.2', '141.142.230.144'])
 
-        # handle wildcard domain
-        fqdn = self._wcd_manipulate(fqdn)
-
-        # rewrite fqdn to resolve txt record
-        fqdn = '_acme-challenge.{0}'.format(fqdn)
-
-        # compute sha256 hash
-        _hash = b64_url_encode(self.logger, sha256_hash(self.logger, '{0}.{1}'.format(token, jwk_thumbprint)))
-        # query dns
-        txt_list = txt_get(self.logger, fqdn, self.dns_server_list)
-
-        # compare computed hash with result from DNS query
-        self.logger.debug('response_got: {0} response_expected: {1}'.format(txt_list, _hash))
-        if _hash in txt_list:
-            self.logger.debug('validation successful')
+        self.logger.debug('{0} resolved into :  {1}'.format(fqdn, _response)) 
+        self.logger.debug('client is requesting cert from IP address :  {0}'.format(config.remote_addr)) 
+        
+        # getting remote address from acme2certifier_wsgi.py using config.remote_addr 
+        if not invalid and _response == config.remote_addr:
             result = True
+            self.logger.debug('REVERSE DNS VALIDATION = SUCCESSFUL') 
         else:
-            self.logger.debug('validation not successful')
             result = False
+            self.logger.debug('REVERSE DNS VALIDATION = FAILED') 
 
         self.logger.debug('Challenge._validate_dns_challenge() ended with: {0}'.format(result))
-        return (result, False)
+        return (result, invalid)
 
     def _validate_http_challenge(self, challenge_name, fqdn, token, jwk_thumbprint):
         """ validate http challenge """

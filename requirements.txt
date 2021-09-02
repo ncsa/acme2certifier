@@ -10,3 +10,5 @@ requests[use_chardet_on_py3]
 pysocks
 josepy
 acme
+pem
+config
