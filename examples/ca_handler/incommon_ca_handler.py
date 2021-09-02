@@ -5,7 +5,7 @@ from __future__ import print_function
 import requests
 import json
 # pylint: disable=E0401
-from acme_srv.helper import b64_decode, b64_encode, load_config, cert_pem2der
+from acme_srv.helper import b64_decode, b64_encode, load_config, cert_pem2der, csr_san_get
 import time
 import pem
 
@@ -32,13 +32,13 @@ class CAhandler(object):
         'customerUri'   : self.customer_uri,
         'Content-Type'  : 'application/json'
         }
-        
+
         #Add a wait timer so sectigo can process a cert; this usually takes around 15-20 seconds
         time.sleep(30)
         response = requests.get('https://cert-manager.com/api/ssl/v1/collect/'+sslId+'/'+'x509', headers=headers)
-        
+
         return response.text
-        
+
     def _config_load(self):
         """" load config from file """
         self.logger.debug('CAhandler._config_load()')
@@ -48,11 +48,11 @@ class CAhandler(object):
         self.api_passwd = config_dic['CAhandler']['api_passwd']
         self.org_id = config_dic['CAhandler']['org_id']
         self.customer_uri = config_dic['CAhandler']['customer_uri']
-        self.cert_type = config_dic['CAhandler']['certType'] 
+        self.cert_type = config_dic['CAhandler']['certType']
         self.number_servers = config_dic['CAhandler']['numberServers']
         self.server_type = config_dic['CAhandler']['serverType']
         self.term = config_dic['CAhandler']['term']
-        
+
         self.logger.debug('CAhandler._config_load() ended')
 
 
@@ -61,6 +61,12 @@ class CAhandler(object):
         self.logger.debug('CAhandler._stub_func({0})'.format(parameter))
         self.logger.debug('CAhandler._stub_func() ended')
 
+    def _get_sans(self, multidomain):
+        """Sanitize output of csr_san_get and return a string of subjAltNames"""
+        subjAltName=[]
+        for item in multidomain:
+            subjAltName.append(item.lstrip('DNS:'))
+        return ','.join(subjAltName)
 
     def enroll(self, csr):
         """ enroll certificate  """
@@ -70,18 +76,22 @@ class CAhandler(object):
         error = None
         cert_raw = None
         poll_identifier = None
+        multidomain = csr_san_get(self.logger, csr)
+        subjAltNames = self._get_sans(multidomain)
+        self.logger.debug('subjAltNames received after sanitizing : {0}'.format(subjAltNames))
         self._stub_func(csr)
         self.csr = csr
-        
+
+
         self.logger.debug(csr)
-        
+
         headers = {
         'login'         : self.api_user,
         'password'      : self.api_passwd,
         'customerUri'   : self.customer_uri,
         'Content-Type'  : 'application/json'
         }
-        
+
         info = {
         "orgId"         : self.org_id,
         "csr"           : self.csr,
@@ -89,9 +99,10 @@ class CAhandler(object):
         "numberServers" : self.number_servers,
         "serverType"    : self.server_type,
         "term"          : 398,
+        "subjAltNames"  : subjAltNames,
         "comments"      : "issued by ncsa-cert-mgr"
         }
-        
+
         data = json.dumps(info)
         try :
             self.logger.debug("Connecting to InCommon cert-manager ...")
@@ -101,29 +112,31 @@ class CAhandler(object):
             self.logger.debug("Error occured while connecting with incommon cert-manager")
             error = 'Error occured during certificate Enrollment with InCommon cert-manager'
             self.logger.debug(e)
-        
+
         json_response = json.loads(response.text)
+        self.logger.debug('InCommon responded back with : {0}'.format(json_response))
+
         rawdata = self._cert_fetch(str(json_response['sslId']))
         self.logger.debug('Fetching certificate from InCommon (rawdata) : {0}'.format(rawdata))
 
         # Generating a certificate bundle in PEM file format is not needed here
         # InCommon responds with an All-In-One certificate bundle that is already base64 string encoded
         # Root cert - Intermediate cert - Leaf cert (from top to bottom of response)
-        # Apache & NGINX web-servers expect it in REVERSE order meaning - Leaf is first, then intermediate then root cert. 
+        # Apache & NGINX web-servers expect it in REVERSE order meaning - Leaf is first, then intermediate then root cert.
         # We use the python pem package below to parse & flip the order of certificate in the bundle before sending down the final response back to client
         # Make sure the pem python package is installed on the acme-responder (pip3 install pem)
         # The client (which is using certbot) receives a fullchain.pem file which contains the cert bundle
         # End user will point their webserver ssl config to this fullchain.pem file
 
         #cert_bundle = rawdata
-        
+
         certs = pem.parse(str.encode(rawdata))
         cert_bundle = str(certs[3])+ '\n' + str(certs[1]) + str(certs[2]) + str(certs[0])
-        
+
         poll_identifier = str(json_response['sslId'])
 
         self.logger.debug('Certificate.enroll() ended')
-        
+
         return(error, cert_bundle, rawdata, poll_identifier)
 
 
