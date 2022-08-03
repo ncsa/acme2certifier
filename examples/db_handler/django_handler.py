@@ -6,15 +6,23 @@ from __future__ import print_function
 import os
 import sys
 import json
-def initialize():
+
+
+def initialize():  # nopep8
     """ initialize routine when calling dbstore functions from script """
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "acme2certifier.settings")
     import django
     # pylint: disable=E1101
     django.setup()
+
+
 initialize()
-from acme_srv.models import Account, Authorization, Cahandler, Certificate, Challenge, Housekeeping, Nonce, Order, Status
+from django.conf import settings  # nopep8
+from acme_srv.models import Account, Authorization, Cahandler, Certificate, Challenge, Housekeeping, Nonce, Order, Status  # nopep8
+from django.db import transaction  # nopep8
+import acme_srv.monkey_patches  # nopep8 lgtm [py/unused-import]
+
 
 class DBstore(object):
     """ helper to do datebase operations """
@@ -90,8 +98,7 @@ class DBstore(object):
             'order__authorization__created_at', 'order__authorization__status_id', 'order__authorization__status__id', 'order__authorization__status__name',
             'order__authorization__challenge__id', 'order__authorization__challenge__name', 'order__authorization__challenge__token',
             'order__authorization__challenge__expires', 'order__authorization__challenge__type', 'order__authorization__challenge__keyauthorization',
-            'order__authorization__challenge__created_at', 'order__authorization__challenge__status__id', 'order__authorization__challenge__status__name'
-            ]
+            'order__authorization__challenge__created_at', 'order__authorization__challenge__status__id', 'order__authorization__challenge__status__name']
         # for historical reason cert_raw an be NULL or ''; we have to consider both cases during selection
         return(vlist, list(Account.objects.filter(name__isnull=False).values(*vlist)))
 
@@ -129,14 +136,20 @@ class DBstore(object):
     def authorization_update(self, data_dic):
         """ update existing authorization """
         self.logger.debug('DBStore.authorization_update({0})'.format(data_dic))
-
         # get some instance for DB insert
         if 'status' in data_dic:
             data_dic['status'] = self._status_getinstance(data_dic['status'], 'name')
 
-        # add authorization
-        obj, _created = Authorization.objects.update_or_create(name=data_dic['name'], defaults=data_dic)
-        obj.save()
+        if settings.DATABASES['default']['ENGINE'] == 'django.db.backends.sqlite3':
+            self.logger.debug('DBStore.authorization_update(): patching transaction to transform all atomic blocks into immediate transactions')
+            with transaction.atomic(immediate=True):
+                # update authorization
+                obj, _created = Authorization.objects.update_or_create(name=data_dic['name'], defaults=data_dic)
+                obj.save()
+        else:
+            # update authorization
+            obj, _created = Authorization.objects.update_or_create(name=data_dic['name'], defaults=data_dic)
+            obj.save()
 
         self.logger.debug('auth_id({0})'.format(obj.id))
         return obj.id
@@ -164,10 +177,9 @@ class DBstore(object):
             result = None
         return result
 
-
-    def challenge_add(self, data_dic):
+    def challenge_add(self, value, mtype, data_dic):
         """ add challenge to database """
-        self.logger.debug('DBStore.challenge_add({0})'.format(data_dic))
+        self.logger.debug('DBStore.challenge_add({0}:{1})'.format(value, mtype))
 
         # get order instance for DB insert
         data_dic['authorization'] = self._authorization_getinstance(data_dic['authorization'])
@@ -175,10 +187,17 @@ class DBstore(object):
         # replace orderstatus with an instance
         data_dic['status'] = self._status_getinstance(data_dic['status'])
 
-        # add authorization
-        obj, _created = Challenge.objects.update_or_create(name=data_dic['name'], defaults=data_dic)
-        obj.save()
+        if settings.DATABASES['default']['ENGINE'] == 'django.db.backends.sqlite3':
+            self.logger.debug('DBStore.challenge_add(): patching transaction to transform all atomic blocks into immediate transactions')
+            with transaction.atomic(immediate=True):
+                obj, _created = Challenge.objects.update_or_create(name=data_dic['name'], defaults=data_dic)
+                obj.save()
+        else:
+            obj, _created = Challenge.objects.update_or_create(name=data_dic['name'], defaults=data_dic)
+            obj.save()
+
         self.logger.debug('cid({0})'.format(obj.id))
+        self.logger.debug('DBStore.challenge_add({0}:{1}:{2})'.format(value, mtype, obj.id))
         return obj.id
 
     def certificate_add(self, data_dic):
@@ -224,8 +243,7 @@ class DBstore(object):
         vlist = [
             'id', 'name', 'cert_raw', 'csr', 'poll_identifier', 'created_at', 'issue_uts', 'expire_uts',
             'order__id', 'order__name', 'order__status__name', 'order__notbefore', 'order__notafter', 'order__expires', 'order__identifiers',
-            'order__account__name', 'order__account__contact', 'order__account__created_at', 'order__account__jwk', 'order__account__alg', 'order__account__eab_kid'
-            ]
+            'order__account__name', 'order__account__contact', 'order__account__created_at', 'order__account__jwk', 'order__account__alg', 'order__account__eab_kid']
         # for historical reason cert_raw an be NULL or ''; we have to consider both cases during selection
         return(vlist, list(Certificate.objects.filter(cert_raw__isnull=False).exclude(cert_raw='').values(*vlist)))
 
@@ -317,7 +335,7 @@ class DBstore(object):
         if account_dict:
             try:
                 jwk_dict = json.loads(account_dict[0]['jwk'].decode())
-            except BaseException:
+            except Exception:
                 jwk_dict = json.loads(account_dict[0]['jwk'])
             jwk_dict['alg'] = account_dict[0]['alg']
         return jwk_dict

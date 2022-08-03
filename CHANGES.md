@@ -5,7 +5,88 @@ This is a high-level summary of the most important changes. For a full list of
 changes, see the [git commit log](https://github.com/grindsa/acme2certifier/commits)
 and pick the appropriate release branch.
 
-## Change in 0.18
+## Changes in 0.21
+
+**Features and Improvements**:
+
+- support of enrollment [hooks](docs/hooks.md)
+- `challenge_validation_timeout` parameter in [acme_srv.cfg](docs/acme_srv.md)
+- cmpv2_ca_handler using the inbuilt cmp feature from openssl 3.0
+- Github action to test certificate enrollment using CMPv2 protocol
+- Github action to test certificate enrollment from [NetGuard Certificate Lifecycle Manager](docs/nclm.md)
+
+**Bugfixes**:
+
+- RFC compliant content-type in error responses
+
+## Changes in 0.20
+
+**Features and Improvements**:
+
+- [CA handler](docs/mswcce.md) using Microsoft Windows Client Certificate Enrollment Protocol
+- asynchronous enrollment workflow using threading module
+- option to re-use certificates enrolled within a certain time window
+- workflow using [Posh-ACME](https://github.com/rmbolger/Posh-ACME)
+
+**Bugfixes**:
+
+- return challenge status when creating/polling Authorization resources
+- remove duplicated certificate extension in openssl_ca_handler.py
+- change challenge status to 'invalid' in case enrollment fails
+
+## Changes in 0.19.3
+
+**Features and Improvements**:
+
+- disable TLSv1.0 and TLSv1.1 fallback when conduction TLS-ALP=1 challenge validation
+- python3-cryptography will be installed via pip to fulfill dependencies from pyOpenssl
+- Changed encoding detection library from chardet to charset_normalizer
+- [lgtm](https://lgtm.com/projects/g/grindsa/acme2certifier/context:python) conformance
+
+## Changes in 0.19.2
+
+**Features and Improvements**:
+
+- support for django 3.x
+- workflow for application testing using win-acme
+- additional linting and pep8 conformance checks
+
+## Changes in 0.19.1
+
+**Features and Improvements**:
+
+- pep8 conformance
+- time adjustments in certmanager and django workflows
+- addressing code-scanning alerts from bandit and CodeQL
+
+## Changes in 0.19
+
+**Bugfixes**:
+
+- [Authorization polling does not trigger challenge validation anymore](https://github.com/grindsa/acme2certifier/issues/76)
+- Overcome database locking situations in django environments using sqlite3 backends
+
+**Features and Improvements**:
+
+- [RFC compliant Wildcard handling](https://github.com/grindsa/acme2certifier/issues/76)
+
+## Changes in 0.18.2
+
+**Bugfixes**:
+
+- [Fix the disabling of SSL validation in http-01 challenge](https://github.com/grindsa/acme2certifier/pull/75)
+
+## Changes in 0.18.1
+
+**Features and Improvements**:
+
+- absolute path support for CA- and EABhandler
+
+**Bugfixes**:
+
+- fixed race condition in push_to_docker workflow
+
+## Changes in 0.18
 
 **Upgrade notes**:
 

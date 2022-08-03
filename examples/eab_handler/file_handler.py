@@ -6,6 +6,7 @@ import csv
 # pylint: disable=E0401
 from acme_srv.helper import load_config
 
+
 class EABhandler(object):
     """ EAB file handler """
 
@@ -46,7 +47,7 @@ class EABhandler(object):
                         if 'eab_kid' in row and 'eab_mac' in row and row['eab_kid'] == kid:
                             mac_key = row['eab_mac']
                             break
-            except BaseException as err:
+            except Exception as err:
                 self.logger.error('EABhandler.mac_key_get() error: {0}'.format(err))
 
         self.logger.debug('EABhandler.mac_key_get() ended with: {0}'.format(bool(mac_key)))

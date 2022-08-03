@@ -14,7 +14,6 @@ RUN apt-get install --no-install-recommends -y \
     python3-mysqldb \
     python3-pymysql \
     python3-psycopg2 \
-    python3-cryptography \
     python3-yaml \
  && rm -rf /var/lib/apt/lists/*
 
@@ -35,6 +34,7 @@ COPY examples/django/ /var/www/acme2certifier/
 COPY examples/django/ /var/www/acme2certifier/examples/django
 COPY examples/ca_handler/ /var/www/acme2certifier/examples/ca_handler
 COPY examples/eab_handler/ /var/www/acme2certifier/examples/eab_handler
+COPY examples/hooks/ /var/www/acme2certifier/examples/hooks
 COPY examples/acme_srv.cfg /var/www/acme2certifier/examples/
 COPY examples/apache_django_ssl.conf /var/www/acme2certifier/examples/
 COPY acme_srv/ /var/www/acme2certifier/acme_srv

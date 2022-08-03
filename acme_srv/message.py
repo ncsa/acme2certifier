@@ -9,6 +9,7 @@ from acme_srv.db_handler import DBstore
 from acme_srv.nonce import Nonce
 from acme_srv.signature import Signature
 
+
 class Message(object):
     """ Message  handler """
 
@@ -18,8 +19,8 @@ class Message(object):
         self.nonce = Nonce(self.debug, self.logger)
         self.dbstore = DBstore(self.debug, self.logger)
         self.server_name = srv_name
-        self.path_dic = {'acct_path' : '/acme/acct/', 'revocation_path' : '/acme/revokecert'}
-        self.disable_dic = {'signature_check_disable' : False, 'nonce_check_disable' : False}
+        self.path_dic = {'acct_path': '/acme/acct/', 'revocation_path': '/acme/revokecert'}
+        self.disable_dic = {'signature_check_disable': False, 'nonce_check_disable': False}
         self._config_load()
 
     def __enter__(self):
@@ -127,11 +128,11 @@ class Message(object):
         self.logger.debug('Message.prepare_response()')
         if 'code' not in status_dic:
             status_dic['code'] = 400
-            status_dic['message'] = 'urn:ietf:params:acme:error:serverInternal'
+            status_dic['type'] = 'urn:ietf:params:acme:error:serverInternal'
             status_dic['detail'] = 'http status code missing'
 
-        if 'message' not in status_dic:
-            status_dic['message'] = 'urn:ietf:params:acme:error:serverInternal'
+        if 'type' not in status_dic:
+            status_dic['type'] = 'urn:ietf:params:acme:error:serverInternal'
 
         if 'detail' not in status_dic:
             status_dic['detail'] = None
@@ -147,11 +148,10 @@ class Message(object):
             if status_dic['detail']:
                 # some error occured get details
                 error_message = Error(self.debug, self.logger)
-                status_dic['detail'] = error_message.enrich_error(status_dic['message'], status_dic['detail'])
-                response_dic['data'] = {'status': status_dic['code'], 'message': status_dic['message'], 'detail': status_dic['detail']}
+                status_dic['detail'] = error_message.enrich_error(status_dic['type'], status_dic['detail'])
+                response_dic['data'] = {'status': status_dic['code'], 'type': status_dic['type'], 'detail': status_dic['detail']}
             else:
-                response_dic['data'] = {'status': status_dic['code'], 'message': status_dic['message']}
-                # response_dic['data'] = {'status': status_dic['code'], 'message': status_dic['message'], 'detail': None}
+                response_dic['data'] = {'status': status_dic['code'], 'type': status_dic['type']}
         else:
             # add nonce to header
             response_dic['header']['Replay-Nonce'] = self.nonce.generate_and_add()

@@ -9,7 +9,7 @@ on:
     - cron:  '0 2 * * 6'
 
 jobs:
-  eab_apache2_wsgi:
+  alpn_apache2_wsgi:
     name: "alpn_apache2_wsgi"
     runs-on: ubuntu-latest
     strategy:
@@ -57,7 +57,7 @@ jobs:
     - name: "[ ENROLL ] lego"
       run: |
         mkdir lego
-        docker run -i -v $PWD/lego:/.lego/ --rm --name lego --network acme goacme/lego -s http://acme-srv -a --email "lego@example.com" --eab --kid keyid_02 --hmac bWFjXzAy -d lego.acme --tls run
+        docker run -i -v $PWD/lego:/.lego/ --rm --name lego --network acme goacme/lego -s http://acme-srv -a --email "lego@example.com" -d lego.acme --tls run
         sudo openssl verify -CAfile examples/Docker/data/acme_ca/root-ca-cert.pem -untrusted examples/Docker/data/acme_ca/sub-ca-cert.pem lego/certificates/lego.acme.crt
 
     - name: "[ * ] collecting test logs"
@@ -73,5 +73,5 @@ jobs:
       uses: actions/upload-artifact@v2
       if: ${{ failure() }}
       with:
-        name: eab-${{ matrix.keylength }}.tar.gz
+        name: alpn-${{ matrix.keylength }}.tar.gz
         path: ${{ github.workspace }}/artifact/upload/

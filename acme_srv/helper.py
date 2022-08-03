@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """ helper functions for acme2certifier """
+# pylint: disable=C0209
 from __future__ import print_function
 import re
 import base64
@@ -11,6 +12,7 @@ import copy
 import configparser
 import os
 import sys
+import importlib
 import textwrap
 from datetime import datetime
 from string import digits, ascii_letters
@@ -31,27 +33,30 @@ import dns.resolver
 import OpenSSL
 import requests
 import requests.packages.urllib3.util.connection as urllib3_cn
-
 from .version import __version__
+
 
 def b64decode_pad(logger, string):
     """ b64 decoding and padding of missing "=" """
     logger.debug('b64decode_pad()')
     try:
         b64dec = base64.urlsafe_b64decode(string + '=' * (4 - len(string) % 4))
-    except BaseException:
+    except Exception:
         b64dec = b'ERR: b64 decoding error'
     return b64dec.decode('utf-8')
+
 
 def b64_decode(logger, string):
     """ b64 decoding """
     logger.debug('b64decode()')
     return convert_byte_to_string(base64.b64decode(string))
 
+
 def b64_encode(logger, string):
     """ encode a bytestream in base64 """
     logger.debug('b64_encode()')
     return convert_byte_to_string(base64.b64encode(string))
+
 
 def b64_url_encode(logger, string):
     """ encode a bytestream in base64 url and remove padding """
@@ -60,19 +65,16 @@ def b64_url_encode(logger, string):
     encoded = base64.urlsafe_b64encode(string)
     return encoded.rstrip(b"=")
 
+
 def b64_url_recode(logger, string):
     """ recode base64_url to base64 """
     logger.debug('b64_url_recode()')
     padding_factor = (4 - len(string) % 4) % 4
     string = convert_byte_to_string(string)
-    string += "="*padding_factor
-    # differ between py2 and py3
-    # pylint: disable=E0602
-    if sys.version_info[0] >= 3:
-        result = str(string).translate(dict(zip(map(ord, u'-_'), u'+/')))
-    else:
-        result = unicode(string).translate(dict(zip(map(ord, u'-_'), u'+/')))
+    string += "=" * padding_factor
+    result = str(string).translate(dict(zip(map(ord, '-_'), '+/')))
     return result
+
 
 def build_pem_file(logger, existing, certificate, wrap, csr=False):
     """ construct pem_file """
@@ -94,14 +96,82 @@ def build_pem_file(logger, existing, certificate, wrap, csr=False):
                 pem_file = '-----BEGIN CERTIFICATE-----\n{0}\n-----END CERTIFICATE-----\n'.format(convert_byte_to_string(certificate))
     return pem_file
 
-def ca_handler_get(logger, ca_handler_name):
-    """ turn handler-filename into a python path """
-    logger.debug('Certificate._ca_handler_get({0})'.format(ca_handler_name))
-    ca_handler_name = ca_handler_name.rstrip('.py')
-    ca_handler_name = ca_handler_name.replace('/', '.')
-    ca_handler_name = ca_handler_name.replace('\\', '.')
-    logger.debug('Certificate._ca_handler_get() ended with: {0}'.format(ca_handler_name))
-    return ca_handler_name
+
+def ca_handler_load(logger, config_dic):
+    """ load and return ca_handler """
+    logger.debug('Helper.ca_handler_load()')
+
+    if 'CAhandler' not in config_dic:
+        logger.error('Helper.ca_handler_load(): CAhandler configuration missing in config file')
+        return None
+
+    if 'handler_file' in config_dic['CAhandler']:
+        # try to load handler from file
+        try:
+            spec = importlib.util.spec_from_file_location('CAhandler', config_dic['CAhandler']['handler_file'])
+            ca_handler_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(ca_handler_module)
+            return ca_handler_module
+        except Exception as err_:
+            logger.critical('Helper.ca_handler_load(): loading CAhandler configured in cfg failed with err: {0}'.format(err_))
+
+    # if no 'handler_file' provided or loading was unsuccessful, try to load default handler
+    try:
+        ca_handler_module = importlib.import_module('acme_srv.ca_handler')
+    except Exception as err_:
+        logger.critical('Helper.ca_handler_load(): loading default CAhandler failed with err: {0}'.format(err_))
+        ca_handler_module = None
+
+    return ca_handler_module
+
+
+def eab_handler_load(logger, config_dic):
+    """ load and return eab_handler """
+    logger.debug('Helper.eab_handler_load()')
+
+    if 'EABhandler' in config_dic and 'eab_handler_file' in config_dic['EABhandler']:
+        # try to load handler from file
+        try:
+            spec = importlib.util.spec_from_file_location('EABhandler', config_dic['EABhandler']['eab_handler_file'])
+            eab_handler_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(eab_handler_module)
+        except Exception as err_:
+            logger.critical('Helper.eab_handler_load(): loading EABhandler configured in cfg failed with err: {0}'.format(err_))
+            try:
+                eab_handler_module = importlib.import_module('acme_srv.eab_handler')
+            except Exception as err_:
+                eab_handler_module = None
+                logger.critical('Helper.eab_handler_load(): loading default EABhandler failed with err: {0}'.format(err_))
+    else:
+        if 'EABhandler' in config_dic:
+            try:
+                eab_handler_module = importlib.import_module('acme_srv.eab_handler')
+            except Exception as err_:
+                logger.critical('Helper.eab_handler_load(): loading default EABhandler failed with err: {0}'.format(err_))
+                eab_handler_module = None
+        else:
+            logger.error('Helper.eab_handler_load(): EABhandler configuration missing in config file')
+            eab_handler_module = None
+
+    return eab_handler_module
+
+
+def hooks_load(logger, config_dic):
+    """ load and return hooks """
+    logger.debug('Helper.hooks_load()')
+
+    hooks_module = None
+    if 'Hooks' in config_dic and 'hooks_file' in config_dic['Hooks']:
+        # try to load hooks from file
+        try:
+            spec = importlib.util.spec_from_file_location('Hooks', config_dic['Hooks']['hooks_file'])
+            hooks_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(hooks_module)
+        except Exception as err_:
+            logger.critical('Helper.hooks_load(): loading Hooks configured in cfg failed with err: {0}'.format(err_))
+
+    return hooks_module
+
 
 def cert_dates_get(logger, certificate):
     """ get serial number form certificate """
@@ -113,22 +183,25 @@ def cert_dates_get(logger, certificate):
         cert = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, pem_file)
         issue_date = date_to_uts_utc(cert.get_notBefore(), _tformat='%Y%m%dT%H%M%SZ')
         expiration_date = date_to_uts_utc(cert.get_notAfter(), _tformat='%Y%m%dT%H%M%SZ')
-    except BaseException:
+    except Exception:
         issue_date = 0
         expiration_date = 0
 
     logger.debug('cert_dates_get() ended with: {0}/{1}'.format(issue_date, expiration_date))
     return (issue_date, expiration_date)
 
+
 def cert_der2pem(pem_file):
     """ convert certificate der to pem """
     certobj = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_ASN1, pem_file)
     return OpenSSL.crypto.dump_certificate(OpenSSL.crypto.FILETYPE_PEM, certobj)
 
+
 def cert_pem2der(pem_file):
     """ convert certificate pem to der """
     certobj = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, pem_file)
     return OpenSSL.crypto.dump_certificate(OpenSSL.crypto.FILETYPE_ASN1, certobj)
+
 
 def cert_pubkey_get(logger, cert):
     """ get public key from certificate  """
@@ -138,6 +211,7 @@ def cert_pubkey_get(logger, cert):
     pubkey_str = convert_byte_to_string(OpenSSL.crypto.dump_publickey(OpenSSL.crypto.FILETYPE_PEM, pubkey))
     logger.debug('CAhandler.cert_pubkey_get() ended with: {0}'.format(pubkey_str))
     return convert_byte_to_string(pubkey_str)
+
 
 def cert_san_get(logger, certificate, recode=True):
     """ get subject alternate names from certificate """
@@ -161,6 +235,7 @@ def cert_san_get(logger, certificate, recode=True):
     logger.debug('cert_san_get() ended')
     return san
 
+
 def cert_extensions_get(logger, certificate, recode=True):
     """ get extenstions from certificate certificate """
     logger.debug('cert_extensions_get()')
@@ -179,6 +254,7 @@ def cert_extensions_get(logger, certificate, recode=True):
     logger.debug('cert_extensions_get() ended with: {0}'.format(extension_list))
     return extension_list
 
+
 def cert_serial_get(logger, certificate):
     """ get serial number form certificate """
     logger.debug('cert_serial_get()')
@@ -187,15 +263,17 @@ def cert_serial_get(logger, certificate):
     logger.debug('cert_serial_get() ended with: {0}'.format(cert.get_serial_number()))
     return cert.get_serial_number()
 
+
 def convert_byte_to_string(value):
     """ convert a variable to string if needed """
     if hasattr(value, 'decode'):
         try:
             return value.decode()
-        except BaseException:
+        except Exception:
             return value
     else:
         return value
+
 
 def convert_string_to_byte(value):
     """ convert a variable to byte if needed """
@@ -204,6 +282,7 @@ def convert_string_to_byte(value):
     else:
         result = value
     return result
+
 
 def csr_cn_get(logger, csr):
     """ get cn from certificate request """
@@ -221,6 +300,7 @@ def csr_cn_get(logger, csr):
     logger.debug('CAhandler.csr_cn_get() ended with: {0}'.format(result))
     return result
 
+
 def csr_dn_get(logger, csr):
     """ get subject from certificate request in openssl notation """
     logger.debug('CAhandler.csr_dn_get()')
@@ -231,6 +311,7 @@ def csr_dn_get(logger, csr):
     logger.debug('CAhandler.csr_dn_get() ended with: {0}'.format(subject_str))
     return subject_str
 
+
 def csr_pubkey_get(logger, csr):
     """ get public key from certificate request """
     logger.debug('CAhandler.csr_pubkey_get()')
@@ -240,6 +321,7 @@ def csr_pubkey_get(logger, csr):
     pubkey_str = convert_byte_to_string(OpenSSL.crypto.dump_publickey(OpenSSL.crypto.FILETYPE_PEM, pubkey))
     logger.debug('CAhandler.csr_pubkey_get() ended with: {0}'.format(pubkey_str))
     return pubkey_str
+
 
 def csr_san_get(logger, csr):
     """ get subject alternate names from certificate """
@@ -258,6 +340,7 @@ def csr_san_get(logger, csr):
     logger.debug('cert_san_get() ended with: {0}'.format(str(san)))
     return san
 
+
 def csr_extensions_get(logger, csr):
     """ get extensions from certificate """
     logger.debug('csr_extensions_get()')
@@ -275,6 +358,7 @@ def csr_extensions_get(logger, csr):
     logger.debug('csr_extensions_get() ended with: {0}'.format(extension_list))
     return extension_list
 
+
 def decode_deserialize(logger, string):
     """ decode and deserialize string """
     logger.debug('decode_deserialize()')
@@ -288,6 +372,7 @@ def decode_deserialize(logger, string):
             string_decode = 'ERR: Json decoding error'
 
     return string_decode
+
 
 def decode_message(logger, message):
     """ decode jwstoken and return header, payload and signature """
@@ -304,7 +389,7 @@ def decode_message(logger, message):
             payload = {}
         signature = jwstoken.objects['signature']
         result = True
-    except BaseException as err:
+    except Exception as err:
         logger.error('decode_message() err: {0}'.format(err))
         error = str(err)
         protected = {}
@@ -315,15 +400,17 @@ def decode_message(logger, message):
         payload = dkeys_lower(payload)
     return(result, error, protected, payload, signature)
 
+
 def dkeys_lower(tree):
     """ lower characters in payload string """
     if isinstance(tree, dict):
-        result = {k.lower() : dkeys_lower(v) for k, v in tree.items()}
+        result = {k.lower(): dkeys_lower(v) for k, v in tree.items()}
     elif isinstance(tree, list):
         result = [dkeys_lower(ele) for ele in tree]
     else:
         result = tree
     return result
+
 
 def fqdn_in_san_check(logger, san_list, fqdn):
     """ check if fqdn is in a list of sans """
@@ -337,17 +424,19 @@ def fqdn_in_san_check(logger, san_list, fqdn):
                 if fqdn == value:
                     result = True
                     break
-            except BaseException:
-                pass
+            except Exception:
+                logger.error('ERROR: fqdn_in_san_check() SAN split failed: {0}'.format(san))
 
     logger.debug('fqdn_in_san_check() ended with: {}'.format(result))
     return result
+
 
 def generate_random_string(logger, length):
     """ generate random string to be used as name """
     logger.debug('generate_random_string()')
     char_set = digits + ascii_letters
     return ''.join(random.choice(char_set) for _ in range(length))
+
 
 def get_url(environ, include_path=False):
     """ get url """
@@ -376,6 +465,7 @@ def get_url(environ, include_path=False):
         result = '{0}://{1}'.format(proto, server_name)
     return result
 
+
 def load_config(logger=None, mfilter=None, cfg_file=None):
     """ small configparser wrappter to load a config file """
     if not cfg_file:
@@ -390,15 +480,17 @@ def load_config(logger=None, mfilter=None, cfg_file=None):
     config.read(cfg_file)
     return config
 
+
 def parse_url(logger, url):
     """ split url into pieces """
     logger.debug('parse_url({0})'.format(url))
     url_dic = {
-        'proto' : urlparse(url).scheme,
-        'host' : urlparse(url).netloc,
-        'path' : urlparse(url).path
+        'proto': urlparse(url).scheme,
+        'host': urlparse(url).netloc,
+        'path': urlparse(url).path
     }
     return url_dic
+
 
 def logger_info(logger, addr, url, dat_dic):
     """ log responses """
@@ -431,6 +523,7 @@ def logger_info(logger, addr, url, dat_dic):
 
     logger.info('{0} {1} {2}'.format(addr, url, str(data_dic)))
 
+
 def logger_setup(debug):
     """ setup logger """
     if debug:
@@ -453,6 +546,7 @@ def logger_setup(debug):
     logger = logging.getLogger('acme2certifier')
     return logger
 
+
 def print_debug(debug, text):
     """ little helper to print debug messages
         args:
@@ -464,6 +558,7 @@ def print_debug(debug, text):
     if debug:
         print('{0}: {1}'.format(datetime.now(), text))
 
+
 def jwk_thumbprint_get(logger, pub_key):
     """ get thumbprint """
     logger.debug('jwk_thumbprint_get()')
@@ -471,15 +566,15 @@ def jwk_thumbprint_get(logger, pub_key):
         try:
             jwkey = jwk.JWK(**pub_key)
             thumbprint = jwkey.thumbprint()
-        except BaseException as err:
+        except Exception as err:
             logger.error('jwk_thumbprint_get(): error: {0}'.format(err))
-            jwkey = None
             thumbprint = None
     else:
         thumbprint = None
 
     logger.debug('jwk_thumbprint_get() ended with: {0}'.format(thumbprint))
     return thumbprint
+
 
 def sha256_hash(logger, string):
     """ hash string """
@@ -488,12 +583,14 @@ def sha256_hash(logger, string):
     logger.debug('sha256_hash() ended with {0} (base64-encoded)'.format(b64_encode(logger, result)))
     return result
 
+
 def sha256_hash_hex(logger, string):
     """ hash string """
     logger.debug('sha256_hash_hex()')
     result = hashlib.sha256(string.encode('utf-8')).hexdigest()
     logger.debug('sha256_hash_hex() ended with {0}'.format(result))
     return result
+
 
 def signature_check(logger, message, pub_key, json_=False):
     """ check JWS """
@@ -509,7 +606,7 @@ def signature_check(logger, message, pub_key, json_=False):
                 jwkey = jwk.JWK.from_json(pub_key)
             else:
                 jwkey = jwk.JWK(**pub_key)
-        except BaseException as err:
+        except Exception as err:
             logger.error('load key failed {0}'.format(err))
             jwkey = None
             result = False
@@ -522,7 +619,7 @@ def signature_check(logger, message, pub_key, json_=False):
             try:
                 jwstoken.verify(jwkey)
                 result = True
-            except BaseException as err:
+            except Exception as err:
                 logger.error('verify failed {0}'.format(err))
                 error = str(err)
     else:
@@ -530,6 +627,7 @@ def signature_check(logger, message, pub_key, json_=False):
 
     # return result
     return(result, error)
+
 
 def fqdn_resolve(host, dnssrv=None):
     """ dns resolver """
@@ -550,16 +648,18 @@ def fqdn_resolve(host, dnssrv=None):
             except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
                 result = None
                 invalid = True
-            except BaseException:
+            except Exception:
                 result = None
                 invalid = False
-            if result != None:
+            # if result != None:
+            if result is not None:
                 break
     else:
         result = None
         invalid = False
 
     return (result, invalid)
+
 
 def dns_server_list_load():
     """ load dns-server from config file """
@@ -569,7 +669,7 @@ def dns_server_list_load():
         if 'dns_server_list' in config_dic['Challenge']:
             try:
                 dns_server_list = json.loads(config_dic['Challenge']['dns_server_list'])
-            except BaseException:
+            except Exception:
                 dns_server_list = ['9.9.9.9', '8.8.8.8']
         else:
             dns_server_list = ['9.9.9.9', '8.8.8.8']
@@ -577,6 +677,7 @@ def dns_server_list_load():
         dns_server_list = ['9.9.9.9', '8.8.8.8']
 
     return dns_server_list
+
 
 def patched_create_connection(address, *args, **kwargs):
     """ Wrap urllib3's create_connection to resolve the name elsewhere"""
@@ -587,6 +688,7 @@ def patched_create_connection(address, *args, **kwargs):
     (hostname, _invalid) = fqdn_resolve(host, dns_server_list)
     # pylint: disable=W0212
     return connection._orig_create_connection((hostname, port), *args, **kwargs)
+
 
 def proxy_check(logger, fqdn, proxy_server_list):
     """ check proxy server """
@@ -612,7 +714,8 @@ def proxy_check(logger, fqdn, proxy_server_list):
     logger.debug('proxy_check() ended with {0}'.format(proxy))
     return proxy
 
-def url_get_with_own_dns(logger, url):
+
+def url_get_with_own_dns(logger, url, verify=True):
     """ request by using an own dns resolver """
     logger.debug('url_get_with_own_dns({0})'.format(url))
     # patch an own connection handler into URL lib
@@ -620,23 +723,25 @@ def url_get_with_own_dns(logger, url):
     connection._orig_create_connection = connection.create_connection
     connection.create_connection = patched_create_connection
     try:
-        req = requests.get(url, headers={'Connection':'close', 'Accept-Encoding': 'gzip', 'User-Agent': 'acme2certifier/{0}'.format(__version__)})
+        req = requests.get(url, verify=verify, headers={'Connection': 'close', 'Accept-Encoding': 'gzip', 'User-Agent': 'acme2certifier/{0}'.format(__version__)})
         result = req.text
-    except BaseException as err_:
+    except Exception as err_:
         result = None
-        logger.error('url_get error: {0}'.format(err_))
+        logger.error('url_get_with_own_dns error: {0}'.format(err_))
     # cleanup
     connection.create_connection = connection._orig_create_connection
     return result
+
 
 def allowed_gai_family():
     """ set family """
     family = socket.AF_INET    # force IPv4
     return family
 
-def url_get(logger, url, dns_server_list=None, proxy_server=None, verify=True):
+
+def url_get(logger, url, dns_server_list=None, proxy_server=None, verify=True, timeout=20):
     """ http get """
-    logger.debug('url_get({0})'.format(url))
+    logger.debug('url_get({0}) vrf={1}, timout:{2}'.format(url, verify, timeout))
 
     # configure proxy servers if specified
     if proxy_server:
@@ -644,26 +749,27 @@ def url_get(logger, url, dns_server_list=None, proxy_server=None, verify=True):
     else:
         proxy_list = {}
     if dns_server_list and not proxy_server:
-        result = url_get_with_own_dns(logger, url)
+        result = url_get_with_own_dns(logger, url, verify)
     else:
         try:
-            req = requests.get(url, headers={'Connection':'close', 'Accept-Encoding': 'gzip', 'User-Agent': 'acme2certifier/{0}'.format(__version__)}, proxies=proxy_list)
+            req = requests.get(url, verify=verify, timeout=timeout, headers={'Connection': 'close', 'Accept-Encoding': 'gzip', 'User-Agent': 'acme2certifier/{0}'.format(__version__)}, proxies=proxy_list)
             result = req.text
-        except BaseException as err_:
+        except Exception as err_:
             logger.debug('url_get({0}): error'.format(err_))
             # force fallback to ipv4
             logger.debug('url_get({0}): fallback to v4'.format(url))
             old_gai_family = urllib3_cn.allowed_gai_family
             try:
                 urllib3_cn.allowed_gai_family = allowed_gai_family
-                req = requests.get(url, verify=verify, headers={'Connection':'close', 'Accept-Encoding': 'gzip', 'User-Agent': 'acme2certifier/{0}'.format(__version__)}, proxies=proxy_list)
+                req = requests.get(url, verify=verify, timeout=timeout, headers={'Connection': 'close', 'Accept-Encoding': 'gzip', 'User-Agent': 'acme2certifier/{0}'.format(__version__)}, proxies=proxy_list)
                 result = req.text
-            except BaseException as err_:
+            except Exception as err_:
                 result = None
                 logger.error('url_get error: {0}'.format(err_))
             urllib3_cn.allowed_gai_family = old_gai_family
     logger.debug('url_get() ended with: {0}'.format(result))
     return result
+
 
 def txt_get(logger, fqdn, dns_srv=None):
     """ dns query to get the TXt record """
@@ -675,22 +781,25 @@ def txt_get(logger, fqdn, dns_srv=None):
         dns.resolver.default_resolver.nameservers = dns_srv
     txt_record_list = []
     try:
-        #result = dns.resolver.query(fqdn, 'TXT')[0].strings[0]
+        # result = dns.resolver.query(fqdn, 'TXT')[0].strings[0]
         response = dns.resolver.query(fqdn, 'TXT')
         for rrecord in response:
             txt_record_list.append(rrecord.strings[0])
-    except BaseException as err_:
+    except Exception as err_:
         logger.error('txt_get() error: {0}'.format(err_))
     logger.debug('txt_get() ended with: {0}'.format(txt_record_list))
     return txt_record_list
+
 
 def uts_now():
     """ return unixtimestamp in utc """
     return calendar.timegm(datetime.utcnow().utctimetuple())
 
+
 def uts_to_date_utc(uts, tformat='%Y-%m-%dT%H:%M:%SZ'):
     """ convert unix timestamp to date format """
     return datetime.fromtimestamp(int(uts), tz=pytz.utc).strftime(tformat)
+
 
 def date_to_uts_utc(date_human, _tformat='%Y-%m-%dT%H:%M:%S'):
     """ convert date to unix timestamp """
@@ -701,21 +810,24 @@ def date_to_uts_utc(date_human, _tformat='%Y-%m-%dT%H:%M:%S'):
         result = int(calendar.timegm(parse(date_human).timetuple()))
     return result
 
+
 def date_to_datestr(date, tformat='%Y-%m-%dT%H:%M:%SZ'):
     """ convert dateobj to datestring """
     try:
         result = date.strftime(tformat)
-    except BaseException:
+    except Exception:
         result = None
     return result
+
 
 def datestr_to_date(datestr, tformat='%Y-%m-%dT%H:%M:%S'):
     """ convert datestr to dateobj """
     try:
         result = datetime.strptime(datestr, tformat)
-    except BaseException:
+    except Exception:
         result = None
     return result
+
 
 def proxystring_convert(logger, proxy_server):
     """ convert proxy string """
@@ -723,7 +835,7 @@ def proxystring_convert(logger, proxy_server):
     proxy_proto_dic = {'http': socks.PROXY_TYPE_HTTP, 'socks4': socks.PROXY_TYPE_SOCKS4, 'socks5': socks.PROXY_TYPE_SOCKS5}
     try:
         (proxy_proto, proxy) = proxy_server.split('://')
-    except BaseException:
+    except Exception:
         logger.error('proxystring_convert(): error splitting proxy_server string: {0}'.format(proxy_server))
         proxy = None
         proxy_proto = None
@@ -731,7 +843,7 @@ def proxystring_convert(logger, proxy_server):
     if proxy:
         try:
             (proxy_addr, proxy_port) = proxy.split(':')
-        except BaseException:
+        except Exception:
             logger.error('proxystring_convert(): error splitting proxy into host/port: {0}'.format(proxy))
             proxy_addr = None
             proxy_port = None
@@ -742,7 +854,7 @@ def proxystring_convert(logger, proxy_server):
     if proxy_proto and proxy_addr and proxy_port:
         try:
             proto_string = proxy_proto_dic[proxy_proto]
-        except BaseException:
+        except Exception:
             logger.error('proxystring_convert(): unknown proxy protocol: {0}'.format(proxy_proto))
             proto_string = None
     else:
@@ -751,12 +863,13 @@ def proxystring_convert(logger, proxy_server):
 
     try:
         proxy_port = int(proxy_port)
-    except BaseException:
+    except Exception:
         logger.error('proxystring_convert(): unknown proxy port: {0}'.format(proxy_port))
         proxy_port = None
 
     logger.debug('proxystring_convert() ended with {0}, {1}, {2}'.format(proto_string, proxy_addr, proxy_port))
     return(proto_string, proxy_addr, proxy_port)
+
 
 def servercert_get(logger, hostname, port=443, proxy_server=None):
     """ get server certificate from an ssl connection """
@@ -764,6 +877,14 @@ def servercert_get(logger, hostname, port=443, proxy_server=None):
 
     pem_cert = None
     sock = socks.socksocket()
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    # reject insecure ssl version
+    context.options |= ssl.OP_NO_SSLv3
+    context.options |= ssl.OP_NO_TLSv1
+    context.options |= ssl.OP_NO_TLSv1_1
+
     if proxy_server:
         (proxy_proto, proxy_addr, proxy_port) = proxystring_convert(logger, proxy_server)
         if proxy_proto and proxy_addr and proxy_port:
@@ -771,20 +892,24 @@ def servercert_get(logger, hostname, port=443, proxy_server=None):
             sock.setproxy(proxy_proto, proxy_addr, port=proxy_port)
     try:
         sock.connect((hostname, port))
-        with(ssl.wrap_socket(sock, cert_reqs=ssl.CERT_NONE)) as sslsock:
+        with context.wrap_socket(sock, server_hostname=hostname) as sslsock:
+            logger.debug('servercert_get() configure proxy: {0}:{1} version: {2}'.format(hostname, port, sslsock.version()))
             der_cert = sslsock.getpeercert(True)
             # from binary DER format to PEM
             if der_cert:
                 pem_cert = ssl.DER_cert_to_PEM_cert(der_cert)
-    except BaseException as err_:
+    except Exception as err_:
         logger.error('servercert_get() failed with: {0}'.format(err_))
         pem_cert = None
+
     return pem_cert
+
 
 def validate_csr(logger, order_dic, _csr):
     """ validate certificate signing request against order"""
     logger.debug('validate_csr({0})'.format(order_dic))
     return True
+
 
 def validate_email(logger, contact_list):
     """ validate contact against RFC608"""
@@ -806,6 +931,7 @@ def validate_email(logger, contact_list):
         result = bool(re.search(pattern, contact_list))
         logger.debug('# validate: {0} result: {1}'.format(contact_list, result))
     return result
+
 
 def handle_exception(exc_type, exc_value, exc_traceback):
     """ exception handler """

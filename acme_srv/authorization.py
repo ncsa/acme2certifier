@@ -9,6 +9,7 @@ from acme_srv.helper import generate_random_string, uts_now, uts_to_date_utc, lo
 from acme_srv.message import Message
 from acme_srv.nonce import Nonce
 
+
 class Authorization(object):
     """ class for order handling """
 
@@ -21,7 +22,7 @@ class Authorization(object):
         self.nonce = Nonce(debug, self.logger)
         self.validity = 86400
         self.expiry_check_disable = False
-        self.path_dic = {'authz_path' : '/acme/authz/'}
+        self.path_dic = {'authz_path': '/acme/authz/'}
 
     def __enter__(self):
         """ Makes ACMEHandler a Context Manager """
@@ -42,24 +43,24 @@ class Authorization(object):
         # lookup authorization based on name
         try:
             authz = self.dbstore.authorization_lookup('name', authz_name)
-        except BaseException as err_:
-            self.logger.critical('acme2certifier database error in Authorization._authz_info(): {0}'.format(err_))
+        except Exception as err_:
+            self.logger.critical('acme2certifier database error in Authorization._authz_info({0}) lookup1: {1}'.format(authz_name, err_))
             authz = None
 
         if authz:
             # update authorization with expiry date and token (just to be sure)
             try:
-                self.dbstore.authorization_update({'name' : authz_name, 'token' : token, 'expires' : expires})
-            except BaseException as err_:
-                self.logger.error('acme2certifier database error in Authorization._authz_info(): {0}'.format(err_))
+                self.dbstore.authorization_update({'name': authz_name, 'token': token, 'expires': expires})
+            except Exception as err_:
+                self.logger.error('acme2certifier database error in Authorization._authz_info({0}) update: {1}'.format(authz_name, err_))
             authz_info_dic['expires'] = uts_to_date_utc(expires)
 
             # get authorization information from db to be inserted in message
             tnauth = None
             try:
                 auth_info = self.dbstore.authorization_lookup('name', authz_name, ['status__name', 'type', 'value'])
-            except BaseException as err_:
-                self.logger.error('acme2certifier database error in Authorization._authz_info(): {0}'.format(err_))
+            except Exception as err_:
+                self.logger.error('acme2certifier database error in Authorization._authz_info({0}) lookup2: {1}'.format(authz_name, err_))
                 auth_info = {}
 
             if auth_info:
@@ -68,16 +69,28 @@ class Authorization(object):
                 else:
                     authz_info_dic['status'] = 'pending'
 
-                if 'type' in auth_info[0]  and 'value' in auth_info[0]:
-                    authz_info_dic['identifier'] = {'type' : auth_info[0]['type'], 'value' : auth_info[0]['value']}
+                if 'type' in auth_info[0] and 'value' in auth_info[0]:
+                    authz_info_dic['identifier'] = {'type': auth_info[0]['type'], 'value': auth_info[0]['value']}
                     if auth_info[0]['type'] == 'TNAuthList':
                         tnauth = True
+                    # add fildcard flag into authoritzation response and modify identifier
+                    if auth_info[0]['value'].startswith('*.'):
+                        self.logger.debug('Authorization._authz_info() - adding wildcard flag')
+                        authz_info_dic['identifier']['value'] = auth_info[0]['value'][2:]
+                        authz_info_dic['wildcard'] = True
             else:
                 authz_info_dic['status'] = 'pending'
 
             with Challenge(self.debug, self.server_name, self.logger, expires) as challenge:
                 # get challenge data (either existing or new ones)
-                authz_info_dic['challenges'] = challenge.challengeset_get(authz_name, authz_info_dic['status'], token, tnauth)
+                if 'identifier' in authz_info_dic:
+                    if 'value' in authz_info_dic['identifier']:
+                        id_value = authz_info_dic['identifier']['value']
+                    else:
+                        id_value = None
+                else:
+                    id_value = None
+                authz_info_dic['challenges'] = challenge.challengeset_get(authz_name, authz_info_dic['status'], token, tnauth, id_value)
 
         self.logger.debug('Authorization._authz_info() returns: {0}'.format(json.dumps(authz_info_dic)))
         return authz_info_dic
@@ -91,7 +104,7 @@ class Authorization(object):
             if 'validity' in config_dic['Authorization']:
                 try:
                     self.validity = int(config_dic['Authorization']['validity'])
-                except BaseException:
+                except Exception:
                     self.logger.warning('Authorization._config_load(): failed to parse validity: {0}'.format(config_dic['Authorization']['validity']))
         if 'Directory' in config_dic:
             if 'url_prefix' in config_dic['Directory']:
@@ -108,7 +121,7 @@ class Authorization(object):
         field_list = ['id', 'name', 'expires', 'value', 'created_at', 'token', 'status__id', 'status__name', 'order__id', 'order__name']
         try:
             authz_list = self.dbstore.authorizations_expired_search('expires', timestamp, vlist=field_list, operant='<=')
-        except BaseException as err_:
+        except Exception as err_:
             self.logger.critical('acme2certifier database error in Authorization.invalidate(): {0}'.format(err_))
             authz_list = []
 
@@ -123,7 +136,7 @@ class Authorization(object):
                     data_dic = {'name': authz['name'], 'status': 'expired'}
                     try:
                         self.dbstore.authorization_update(data_dic)
-                    except BaseException as err_:
+                    except Exception as err_:
                         self.logger.critical('acme2certifier database error in Authorization.invalidate(): {0}'.format(err_))
 
         self.logger.debug('Authorization.invalidate() ended: {0} authorizations identified'.format(len(output_list)))
@@ -164,7 +177,7 @@ class Authorization(object):
                 detail = 'url is missing in protected'
 
         # prepare/enrich response
-        status_dic = {'code': code, 'message' : message, 'detail' : detail}
+        status_dic = {'code': code, 'type': message, 'detail': detail}
         response_dic = self.message.prepare_response(response_dic, status_dic)
 
         self.logger.debug('Authorization.new_post() returns: {0}'.format(json.dumps(response_dic)))

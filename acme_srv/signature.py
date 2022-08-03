@@ -5,6 +5,7 @@ from __future__ import print_function
 from acme_srv.helper import signature_check, load_config
 from acme_srv.db_handler import DBstore
 
+
 class Signature(object):
     """ Signature handler """
 
@@ -14,19 +15,18 @@ class Signature(object):
         self.dbstore = DBstore(self.debug, self.logger)
         self.server_name = srv_name
         cfg = load_config()
-        if 'Directory' in cfg:            
+        if 'Directory' in cfg:
             if 'url_prefix' in cfg['Directory']:
-                self.revocation_path = cfg['Directory']['url_prefix'] + '/acme/revokecert' 
+                self.revocation_path = cfg['Directory']['url_prefix'] + '/acme/revokecert'
             else:
-                self.revocation_path = '/acme/revokecert' 
-        
+                self.revocation_path = '/acme/revokecert'
 
     def _jwk_load(self, kid):
         """ get key for a specific account id """
         self.logger.debug('Signature._jwk_load({0})'.format(kid))
         try:
             result = self.dbstore.jwk_load(kid)
-        except BaseException as err_:
+        except Exception as err_:
             print(err_)
             self.logger.critical('acme2certifier database error in Signature._hwk_load(): {0}'.format(err_))
             result = None

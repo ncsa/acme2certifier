@@ -9,19 +9,22 @@ import os
 from acme_srv.helper import datestr_to_date, load_config
 from acme_srv.version import __dbversion__
 
+
 def initialize():
     """ run db_handler specific initialization functions  """
     # pylint: disable=W0107
     pass
 
+
 def dict_from_row(row):
     """ small helper to convert the output of a "select" command into a dictionary """
     return dict(zip(row.keys(), row))
 
+
 class DBstore(object):
     """ helper to do datebase operations """
 
-    def __init__(self, debug=False, logger=None, db_name=None): #
+    def __init__(self, debug=False, logger=None, db_name=None):
         """ init """
         self.db_name = db_name
         self.debug = debug
@@ -33,7 +36,7 @@ class DBstore(object):
             if 'DBhandler' in cfg and 'dbfile' in cfg['DBhandler']:
                 db_name = cfg['DBhandler']['dbfile']
             else:
-                db_name = os.path.dirname(__file__)+'/'+'acme_srv.db'
+                db_name = os.path.dirname(__file__) + '/' + 'acme_srv.db'
 
         self.db_name = db_name
 
@@ -48,7 +51,7 @@ class DBstore(object):
             pre_statement = 'SELECT * from account WHERE {0} LIKE ?'.format(column)
             self.cursor.execute(pre_statement, [string])
             result = self.cursor.fetchone()
-        except BaseException as err:
+        except Exception as err:
             self.logger.error('DBStore._account_search(column:{0}, pattern:{1}) failed with err: {2}'.format(column, string, err))
         self._db_close()
         self.logger.debug('DBStore._account_search() ended with: {0}'.format(bool(result)))
@@ -76,7 +79,7 @@ class DBstore(object):
         try:
             self.cursor.execute(pre_statement, [string])
             result = self.cursor.fetchall()
-        except BaseException as err:
+        except Exception as err:
             self.logger.error('DBStore._authorization_search(column:{0}, pattern:{1}) failed with err: {2}'.format(column, string, err))
         self._db_close()
         self.logger.debug('DBStore._authorization_search() ended')
@@ -90,7 +93,7 @@ class DBstore(object):
         try:
             self.cursor.execute(pre_statement, [string])
             result = self.cursor.fetchone()
-        except BaseException as err:
+        except Exception as err:
             self.logger.error('DBStore._cahandler_search(column:{0}, pattern:{1}) failed with err: {2}'.format(column, string, err))
             result = None
         self._db_close()
@@ -146,7 +149,7 @@ class DBstore(object):
         try:
             self.cursor.execute(pre_statement, [string])
             result = self.cursor.fetchone()
-        except BaseException as err:
+        except Exception as err:
             self.logger.error('DBStore._challenge_search(column:{0}, pattern:{1}) failed with err: {2}'.format(column, string, err))
         self._db_close()
         self.logger.debug('DBStore._challenge_search() ended')
@@ -249,7 +252,7 @@ class DBstore(object):
         try:
             self.cursor.execute(pre_statement, [string])
             result = self.cursor.fetchone()
-        except BaseException as err:
+        except Exception as err:
             self.logger.error('DBStore._order_search(column:{0}, pattern:{1}) failed with err: {2}'.format(column, string, err))
         self._db_close()
         self.logger.debug('DBStore._order_search() ended')
@@ -310,7 +313,7 @@ class DBstore(object):
         self.logger.debug('DBStore.account_lookup(column:{0}, pattern:{1})'.format(column, string))
         try:
             result = dict_from_row(self._account_search(column, string))
-        except BaseException as _err:
+        except Exception as _err:
             result = {}
         if 'created_at' in result:
             result['created_at'] = datestr_to_date(result['created_at'], '%Y-%m-%d %H:%M:%S')
@@ -323,7 +326,7 @@ class DBstore(object):
 
         try:
             lookup = dict_from_row(self._account_search('name', data_dic['name']))
-        except BaseException as _err:
+        except Exception as _err:
             lookup = None
 
         if lookup:
@@ -353,47 +356,46 @@ class DBstore(object):
             'order__authorization__created_at', 'order__authorization__status__id', 'order__authorization__status__name',
             'order__authorization__challenge__id', 'order__authorization__challenge__name', 'order__authorization__challenge__token',
             'order__authorization__challenge__expires', 'order__authorization__challenge__type', 'order__authorization__challenge__keyauthorization',
-            'order__authorization__challenge__created_at', 'order__authorization__challenge__status__id', 'order__authorization__challenge__status__name'
-            ]
+            'order__authorization__challenge__created_at', 'order__authorization__challenge__status__id', 'order__authorization__challenge__status__name']
 
         self._db_open()
 
         pre_statement = '''SELECT account.*,
-                        	orders.id as order__id,
-                        	orders.name as order__name,
-                        	orders.status_id as order__status,
-                        	orders.notbefore as order__notbefore,
-                        	orders.notafter as order__notafter,
-                        	orders.expires as order__expires,
-                        	orders.identifiers as order__identifiers,
-                        	orders.created_at as order__created_at,
-                        	orders.status_id as order__status__id,
-                        	order_status.name as order__status__name,
-                        	authorization.id as order__authorization__id,
-                        	authorization.name as order__authorization__name,
-                        	authorization.type as order__authorization__type,
-                        	authorization.value as order__authorization__value,
-                        	authorization.expires as order__authorization__expires,
-                        	authorization.token as order__authorization__token,
-                        	authorization.created_at as order__authorization__created_at,
-                        	authorization.status_id as order__authorization__status__id,
-                        	auth_status.name as order__authorization__status__name,
-                        	challenge.id as order__authorization__challenge__id,
-                        	challenge.name as order__authorization__challenge__name,
-                        	challenge.token as order__authorization__challenge__token,
-                        	challenge.expires as order__authorization__challenge__expires,
-                        	challenge.type as order__authorization__challenge__type,
-                        	challenge.keyauthorization as order__authorization__challenge__keyauthorization,
-                        	challenge.created_at as order__authorization__challenge__created_at,
-                        	challenge.status_id as order__authorization__challenge__status__id,
-                        	chall_status.name as order__authorization__challenge__status__name
-                        	from account
-                        	JOIN orders on orders.account_id = account.id
-                        	JOIN authorization on authorization.order_id = orders.id
-                        	JOIN challenge on challenge.authorization_id = authorization.id
-                        	JOIN status as order_status on order_status.id = orders.status_id
-                        	JOIN status as auth_status on auth_status.id = authorization.status_id
-                        	JOIN status as chall_status on chall_status.id = challenge.status_id'''
+                           orders.id as order__id,
+                           orders.name as order__name,
+                           orders.status_id as order__status,
+                           orders.notbefore as order__notbefore,
+                           orders.notafter as order__notafter,
+                           orders.expires as order__expires,
+                           orders.identifiers as order__identifiers,
+                           orders.created_at as order__created_at,
+                           orders.status_id as order__status__id,
+                           order_status.name as order__status__name,
+                           authorization.id as order__authorization__id,
+                           authorization.name as order__authorization__name,
+                           authorization.type as order__authorization__type,
+                           authorization.value as order__authorization__value,
+                           authorization.expires as order__authorization__expires,
+                           authorization.token as order__authorization__token,
+                           authorization.created_at as order__authorization__created_at,
+                           authorization.status_id as order__authorization__status__id,
+                           auth_status.name as order__authorization__status__name,
+                           challenge.id as order__authorization__challenge__id,
+                           challenge.name as order__authorization__challenge__name,
+                           challenge.token as order__authorization__challenge__token,
+                           challenge.expires as order__authorization__challenge__expires,
+                           challenge.type as order__authorization__challenge__type,
+                           challenge.keyauthorization as order__authorization__challenge__keyauthorization,
+                           challenge.created_at as order__authorization__challenge__created_at,
+                           challenge.status_id as order__authorization__challenge__status__id,
+                           chall_status.name as order__authorization__challenge__status__name
+                           from account
+                           JOIN orders on orders.account_id = account.id
+                           JOIN authorization on authorization.order_id = orders.id
+                           JOIN challenge on challenge.authorization_id = authorization.id
+                           JOIN status as order_status on order_status.id = orders.status_id
+                           JOIN status as auth_status on auth_status.id = authorization.status_id
+                           JOIN status as chall_status on chall_status.id = challenge.status_id'''
 
         self.cursor.execute(pre_statement)
         rows = self.cursor.fetchall()
@@ -428,7 +430,7 @@ class DBstore(object):
 
         try:
             lookup = self._authorization_search(column, string)
-        except BaseException:
+        except Exception:
             lookup = []
 
         authz_list = []
@@ -534,7 +536,7 @@ class DBstore(object):
     def cahandler_add(self, data_dic):
         """ add cahandler values to database """
         self.logger.debug('DBStore.cahandler_add({0})'.format(data_dic))
-        if not 'value2' in data_dic:
+        if 'value2' not in data_dic:
             data_dic['value2'] = ''
 
         # check if we alredy have an entry for the key
@@ -559,7 +561,7 @@ class DBstore(object):
 
         try:
             lookup = dict_from_row(self._cahandler_search(column, string))
-        except BaseException:
+        except Exception:
             lookup = None
 
         result = {}
@@ -598,11 +600,11 @@ class DBstore(object):
             # change order name to id but tackle cases where we cannot do this
             try:
                 data_dic['order'] = dict_from_row(self._order_search('name', data_dic['order']))['id']
-            except BaseException:
+            except Exception:
                 data_dic['order'] = 0
 
             self._db_open()
-            if not 'csr' in data_dic:
+            if 'csr' not in data_dic:
                 data_dic['csr'] = ''
             if 'error' in data_dic:
                 self.cursor.execute('''INSERT INTO Certificate(name, error, order_id, csr) VALUES(:name, :error, :order, :csr)''', data_dic)
@@ -660,7 +662,7 @@ class DBstore(object):
             if lookup:
                 for ele in vlist:
                     result[ele] = lookup[ele]
-                    #if ele == 'order__name':
+                    # if ele == 'order__name':
                     #    result['order'] = lookup[ele]
             cert_list.append(result)
 
@@ -673,7 +675,7 @@ class DBstore(object):
 
         try:
             lookup = dict_from_row(self._certificate_search(column, string))
-        except BaseException:
+        except Exception:
             lookup = None
 
         result = {}
@@ -765,12 +767,12 @@ class DBstore(object):
         self.logger.debug('DBStore._challenge_search() ended')
         return challenge_list
 
-    def challenge_add(self, data_dic):
+    def challenge_add(self, value, mtype, data_dic):
         """ add challenge to database """
-        self.logger.debug('DBStore.challenge_add({0})'.format(data_dic))
+        self.logger.debug('DBStore.challenge_add({0}:{1})'.format(value, mtype))
         authorization = self.authorization_lookup('name', data_dic['authorization'], ['id'])
 
-        if not "status" in data_dic:
+        if "status" not in data_dic:
             data_dic['status'] = 2
         if authorization:
             data_dic['authorization'] = authorization[0]['id']
@@ -789,7 +791,7 @@ class DBstore(object):
 
         try:
             lookup = dict_from_row(self._challenge_search(column, string))
-        except BaseException:
+        except Exception:
             lookup = None
 
         result = {}
@@ -954,7 +956,7 @@ class DBstore(object):
         self.cursor.execute(pre_statement, [parameter])
         try:
             query = list(self.cursor.fetchone())
-        except BaseException:
+        except Exception:
             query = None
 
         if query:
@@ -1036,7 +1038,7 @@ class DBstore(object):
 
         try:
             lookup = dict_from_row(self._order_search(column, string))
-        except BaseException:
+        except Exception:
             lookup = None
 
         result = {}

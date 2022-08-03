@@ -3,19 +3,19 @@
 """ generic ca handler for CAs supporting acme protocol """
 from __future__ import print_function
 # pylint: disable=E0401, W0105, R0914, W0212
-import requests
-import os.path
 import json
 import textwrap
 import base64
-import josepy
 import re
+import os.path
+import requests
+import josepy
 from OpenSSL import crypto
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
 from acme import client, messages
 from acme_srv.db_handler import DBstore
-from acme_srv.helper import load_config, b64_url_recode, csr_cn_get, csr_san_get
+from acme_srv.helper import load_config, b64_url_recode, csr_cn_get, csr_san_get, parse_url
 
 """
 Config file section:
@@ -28,17 +28,19 @@ acme_keyfile: /path/to/privkey.json
 
 """
 
+
 class CAhandler(object):
     """ EST CA  handler """
 
     def __init__(self, _debug=None, logger=None):
         self.logger = logger
         self.url = None
+        self.url_dic = {}
         self.keyfile = None
         self.key_size = 2048
         self.account = None
         self.email = None
-        self.path_dic = {'directory_path': '/directory', 'acct_path' : '/acme/acct/'}
+        self.path_dic = {'directory_path': '/directory', 'acct_path': '/acme/acct/'}
         self.dbstore = DBstore(None, self.logger)
         self.allowed_domainlist = []
         self.eab_kid = None
@@ -65,16 +67,12 @@ class CAhandler(object):
 
             if 'acme_url' in config_dic['CAhandler']:
                 self.url = config_dic['CAhandler']['acme_url']
+                self.url_dic = parse_url(self.logger, self.url)
             else:
                 self.logger.error('CAhandler._config_load() configuration incomplete: "acme_url" parameter is missing in config file')
 
             if 'acme_account' in config_dic['CAhandler']:
                 self.account = config_dic['CAhandler']['acme_account']
-            # else:
-                # try to fetch acme-account id from housekeeping table
-                # self.account = self.dbstore.hkparameter_get('acme_account')
-                # if self.account:
-                #    self.logger.debug('CAhandler._config_load() found acme_account in housekeeping table: {0}'.format(self.account))
 
             if 'account_path' in config_dic['CAhandler']:
                 self.path_dic['acct_path'] = config_dic['CAhandler']['account_path']
@@ -91,15 +89,14 @@ class CAhandler(object):
             if 'allowed_domainlist' in config_dic['CAhandler']:
                 try:
                     self.allowed_domainlist = json.loads(config_dic['CAhandler']['allowed_domainlist'])
-                except BaseException as err:
+                except Exception as err:
                     self.logger.error('CAhandler._config_load(): failed to parse allowed_domainlist: {0}'.format(err))
 
-            if 'eab_kid' in  config_dic['CAhandler']:
+            if 'eab_kid' in config_dic['CAhandler']:
                 self.eab_kid = config_dic['CAhandler']['eab_kid']
 
-            if 'eab_hmac_key' in  config_dic['CAhandler']:
+            if 'eab_hmac_key' in config_dic['CAhandler']:
                 self.eab_hmac_key = config_dic['CAhandler']['eab_hmac_key']
-
 
             self.logger.debug('CAhandler._config_load() ended')
         else:
@@ -145,7 +142,7 @@ class CAhandler(object):
                         # SAN list must be modified/filtered)
                         (_san_type, san_value) = san.lower().split(':')
                         san_list.append(san_value)
-                    except BaseException:
+                    except Exception:
                         # force check to fail as something went wrong during parsing
                         check_list.append(False)
                         self.logger.debug('CAhandler._csr_check(): san_list parsing failed at entry: {0}'.format(san))
@@ -216,7 +213,7 @@ class CAhandler(object):
             chall_content = challenge.chall.validation(user_key)
             try:
                 (chall_name, _token) = chall_content.split('.', 2)
-            except BaseException:
+            except Exception:
                 self.logger.error('CAhandler._http_challenge_info() challenge split failed: {0}'.format(chall_content))
         else:
             if authzr:
@@ -284,10 +281,10 @@ class CAhandler(object):
             regr = acmeclient._regr_from_response(response)
             regr = acmeclient.query_registration(regr)
             self.logger.debug('CAhandler.__account_register(): found existing account: {0}'.format(regr.uri))
-        except BaseException:
+        except Exception:
             if self.email:
                 self.logger.debug('CAhandler.__account_register(): register new account with email: {0}'.format(self.email))
-                if self.url and 'zerossl.com' in self.url:
+                if self.url and 'host' in self.url_dic and self.url_dic['host'].endswith('zerossl.com'):  # lgtm [py/incomplete-url-substring-sanitization]
                     # get zerossl eab credentials
                     self._zerossl_eab_get()
                 if self.eab_kid and self.eab_hmac_key:
@@ -308,8 +305,7 @@ class CAhandler(object):
                 self.account = regr.uri.replace(self.url, '').replace(self.path_dic['acct_path'], '')
             if self.account:
                 self.logger.info('acme-account id is {0}. Please add an corresponding acme_account parameter to your acme_srv.cfg to avoid unnecessary lookups'.format(self.account))
-                # store account-id in housekeeping table to avoid unneccary rquests towards acme-server
-                # self.dbstore.hkparameter_add({'name': 'acme_account', 'value': self.account})
+
         return regr
 
     def _zerossl_eab_get(self):
@@ -319,7 +315,7 @@ class CAhandler(object):
         zero_eab_email = "http://api.zerossl.com/acme/eab-credentials-email"
         data = {'email': self.email}
 
-        response = requests.post(zero_eab_email, data = data)
+        response = requests.post(zero_eab_email, data=data)
         if 'success' in response.json() and response.json()['success'] and 'eab_kid' in response.json() and 'eab_hmac_key' in response.json():
             self.eab_kid = response.json()['eab_kid']
             self.eab_hmac_key = response.json()['eab_hmac_key']
@@ -329,6 +325,7 @@ class CAhandler(object):
 
     def enroll(self, csr):
         """ enroll certificate  """
+        # pylint: disable=R0915
         self.logger.debug('CAhandler.enroll()')
 
         csr_pem = '-----BEGIN CERTIFICATE REQUEST-----\n{0}\n-----END CERTIFICATE REQUEST-----\n'.format(textwrap.fill(str(b64_url_recode(self.logger, csr)), 64))
@@ -370,7 +367,7 @@ class CAhandler(object):
                         if challenge_name and challenge_content:
                             # store challenge in database to allow challenge validation
                             self._challenge_store(challenge_name, challenge_content)
-                            _auth_response = acmeclient.answer_challenge(challenge, challenge.chall.response(user_key))
+                            _auth_response = acmeclient.answer_challenge(challenge, challenge.chall.response(user_key))  # lgtm [py/unused-local-variable]
 
                     self.logger.debug('CAhandler.enroll() polling for certificate')
                     order = acmeclient.poll_and_finalize(order)
@@ -388,7 +385,7 @@ class CAhandler(object):
                     error = 'Bad ACME account: {0}'.format(regr.body.error)
                     # raise Exception("Bad ACME account: " + str(regr.body.error))
 
-            except BaseException as err:
+            except Exception as err:
                 self.logger.error('CAhandler.enroll: error: {0}'.format(err))
                 error = str(err)
             finally:
@@ -460,7 +457,7 @@ class CAhandler(object):
                 self.logger.error('CAhandler.revoke(): could not load user_key {0}'.format(self.keyfile))
                 detail = 'Internal Error'
 
-        except BaseException as err:
+        except Exception as err:
             self.logger.error('CAhandler.enroll: error: {0}'.format(err))
             detail = str(err)
 

@@ -3,10 +3,10 @@
 """ Challenge class """
 from __future__ import print_function
 import json
-import importlib
 from acme_srv.certificate import Certificate
 from acme_srv.db_handler import DBstore
-from acme_srv.helper import convert_byte_to_string, cert_pubkey_get, csr_pubkey_get, cert_der2pem, b64_decode, load_config, ca_handler_get
+from acme_srv.helper import convert_byte_to_string, cert_pubkey_get, csr_pubkey_get, cert_der2pem, b64_decode, load_config, ca_handler_load
+
 
 class Trigger(object):
     """ Challenge handler """
@@ -55,26 +55,14 @@ class Trigger(object):
         config_dic = load_config()
         if 'Order' in config_dic:
             self.tnauthlist_support = config_dic.getboolean('Order', 'tnauthlist_support', fallback=False)
-        if 'CAhandler' in config_dic and 'handler_file' in config_dic['CAhandler']:
-            try:
-                ca_handler_module = importlib.import_module(ca_handler_get(self.logger, config_dic['CAhandler']['handler_file']))
-            except BaseException as err_:
-                self.logger.critical('Certificate._config_load(): loading CAhandler configured in cfg failed with err: {0}'.format(err_))
-                try:
-                    ca_handler_module = importlib.import_module('acme_srv.ca_handler')
-                except BaseException as err_:
-                    ca_handler_module = None
-                    self.logger.critical('Certificate._config_load(): loading default CAhandler failed with err: {0}'.format(err_))
-        else:
-            if 'CAhandler' in config_dic:
-                ca_handler_module = importlib.import_module('acme_srv.ca_handler')
-            else:
-                self.logger.error('Trigger._config_load(): CAhandler configuration missing in config file')
-                ca_handler_module = None
 
+        ca_handler_module = ca_handler_load(self.logger, config_dic)
         if ca_handler_module:
             # store handler in variable
-            self.cahandler = ca_handler_module.CAhandler
+            try:
+                self.cahandler = ca_handler_module.CAhandler
+            except Exception as err_:
+                self.logger.critical('Certificate._config_load(): loading CAhandler failed with err: {0}'.format(err_))
 
         self.logger.debug('ca_handler: {0}'.format(ca_handler_module))
         self.logger.debug('Certificate._config_load() ended.')
@@ -94,16 +82,16 @@ class Trigger(object):
 
                     if cert_name_list:
                         for cert in cert_name_list:
-                            data_dic = {'cert' : cert_bundle, 'name': cert['cert_name'], 'cert_raw' : cert_raw}
+                            data_dic = {'cert': cert_bundle, 'name': cert['cert_name'], 'cert_raw': cert_raw}
                             try:
                                 self.dbstore.certificate_add(data_dic)
-                            except BaseException as err_:
+                            except Exception as err_:
                                 self.logger.critical('acme2certifier database error in trigger._payload_process() add: {0}'.format(err_))
                             if 'order_name' in cert and cert['order_name']:
                                 try:
                                     # update order status to 5 (valid)
                                     self.dbstore.order_update({'name': cert['order_name'], 'status': 'valid'})
-                                except BaseException as err_:
+                                except Exception as err_:
                                     self.logger.critical('acme2certifier database error in trigger._payload_process() upd: {0}'.format(err_))
                         code = 200
                         message = 'OK'
@@ -131,7 +119,7 @@ class Trigger(object):
         # convert to json structure
         try:
             payload = json.loads(convert_byte_to_string(content))
-        except BaseException:
+        except Exception:
             payload = {}
 
         if 'payload' in payload:
@@ -146,13 +134,11 @@ class Trigger(object):
             message = 'malformed'
             detail = 'payload missing'
         response_dic = {}
-        # check message
-
 
         # prepare/enrich response
         response_dic['header'] = {}
         response_dic['code'] = code
-        response_dic['data'] = {'status': code, 'message': message}
+        response_dic['data'] = {'status': code, 'type': message}
         if detail:
             response_dic['data']['detail'] = detail
 

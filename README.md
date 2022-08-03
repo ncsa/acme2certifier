@@ -8,6 +8,7 @@
 
 [![Codecov main](https://img.shields.io/codecov/c/gh/grindsa/acme2certifier/branch/master?label=test%20coverage%20master)](https://app.codecov.io/gh/grindsa/acme2certifier/branch/master)
 [![Codecov devel](https://img.shields.io/codecov/c/gh/grindsa/acme2certifier/branch/devel?label=test%20coverage%20devel)](https://app.codecov.io/gh/grindsa/acme2certifier/branch/devel)
+[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/grindsa/acme2certifier.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/grindsa/acme2certifier/context:python)
 
 acme2certifier is development project to create an ACME protocol proxy. Main
 intention is to provide ACME services on CA servers which do not support this
@@ -24,6 +25,7 @@ should be straight forward. As of today the following handlers are available:
   - [Generic EST protocol handler](docs/est.md)
   - [Generic CMPv2 protocol handler](docs/cmp.md)
   - [Microsoft Certificate Enrollment Web Services](docs/mscertsrv.md)
+  - [Microsoft Windows Client Certificate Enrollment Protocol (MS-WCCE) via RPC/DCOM](docs/mswcce.md)
   - [Generic ACME protocol handler supporting Letsencrypt, BuyPass.com and ZeroSSL](docs/acme_ca.md)
   - [XCA](docs/xca.md)
   - [acme2dfn](https://github.com/pfisterer/acme2dfn) (external; ACME proxy for the [German research network's SOAP API](https://blog.pki.dfn.de/tag/soap-api/))
@@ -45,6 +47,7 @@ Following acme-clients are used for regular testing of server functionality
 - [acmeshell](https://github.com/cpu/acmeshell/)
 - [cert-manager](docs/cert-mgr.md)
 - [win-acme](https://www.win-acme.com/)
+- [Posh-ACME](https://github.com/rmbolger/Posh-ACME)
 
 Other clients are on my list for later testing. In case you are bored, feel
 free to test other ACME clients and raise [issues](https://github.com/grindsa/acme2certifier/issues/new)
@@ -69,7 +72,7 @@ As of today acme2certifier supports the below ACME functions:
   - Account Deactivation [(Section 7.3.6)](https://tools.ietf.org/html/rfc8555#section-7.3.6)
 - "new-order" resource [(Section 7.4)](https://tools.ietf.org/html/rfc8555#section-7.4)
 - "order finalization" [(Section 7.4)](https://tools.ietf.org/html/rfc8555#section-7.4)
-- "certificate download" [(Section 7.4.2)](https://tools.ietf.org/html/draft-ietf-acme-acme-18#section-7.4.2)
+- "certificate download" [(Section 7.4.2)](https://tools.ietf.org/html/rfc8555#section-7.4.2)
 - "authz" resource [(Section 7.5)](https://tools.ietf.org/html/rfc8555#section-7.5)
 - "challenge" resource [(Section 7.5.1)](https://tools.ietf.org/html/rfc8555#section-7.5.1)
 - "certificate revocation" [(Section 7.6)](https://tools.ietf.org/html/rfc8555#section-7.6)
@@ -102,10 +105,9 @@ django project. Running acme2certifier as django project allows to use other
 database backends than SQLite.
 
 The fastest and most convenient way to install acme2certifier is to use docker
-containers.  There are ready made images available at [dockerhub](https://hub.docker.com/r/grindsa/acme2certifier) and [ghcr.io](https://github.com/users/grindsa/packages/container/acme2certifier/)
-as well as [instructions to build your own container](examples/Docker/).
+containers.  There are ready made images available at [dockerhub](https://hub.docker.com/r/grindsa/acme2certifier) and [ghcr.io](https://github.com/grindsa?tab=packages&ecosystem=container) as well as [instructions to build your own container](examples/Docker/).
 
-- [acme2certifier in Github container repository](https://github.com/users/grindsa/packages/container/acme2certifier/)
+- [acme2certifier in Github container repository](https://github.com/grindsa?tab=packages&ecosystem=container)
 - [acme2certifier repository at hub.docker.com](https://hub.docker.com/r/grindsa/acme2certifier)
 - [Instructions to build your own container](examples/Docker/)
 - [Installation as wsgi-script running on apache2](docs/install_apache2_wsgi.md)

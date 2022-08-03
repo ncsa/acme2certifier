@@ -11,6 +11,7 @@ from OpenSSL import crypto
 # pylint: disable=E0401
 from acme_srv.helper import load_config, build_pem_file, uts_now, uts_to_date_utc, b64_url_recode, cert_serial_get, convert_string_to_byte, convert_byte_to_string, csr_cn_get, csr_san_get
 
+
 class CAhandler(object):
     """ CA  handler """
 
@@ -18,9 +19,9 @@ class CAhandler(object):
         self.debug = debug
         self.logger = logger
         self.issuer_dict = {
-            'issuing_ca_key' : None,
-            'issuing_ca_cert' : None,
-            'issuing_ca_crl'  : None,
+            'issuing_ca_key': None,
+            'issuing_ca_cert': None,
+            'issuing_ca_crl': None,
         }
         self.ca_cert_chain_list = []
         self.cert_validity_days = 365
@@ -70,16 +71,16 @@ class CAhandler(object):
 
         try:
             cert = crypto.load_certificate(crypto.FILETYPE_PEM, pem_file)
-        except BaseException as err_:
+        except Exception as err_:
             cert = None
             error = err_
 
         if not error:
-            #Create a certificate store and add ca cert(s)
+            # Create a certificate store and add ca cert(s)
             try:
                 store = crypto.X509Store()
                 store.add_cert(ca_cert)
-            except BaseException:
+            except Exception:
                 error = 'issuing certificate could not be added to trust-store'
 
             if not error:
@@ -89,7 +90,7 @@ class CAhandler(object):
                         with open(cert_name, 'r') as fso:
                             cain_cert = crypto.load_certificate(crypto.FILETYPE_PEM, fso.read())
                         store.add_cert(cain_cert)
-                    except BaseException:
+                    except Exception:
                         error = 'certificate {0} could not be added to trust store'.format(cert_name)
 
             if not error:
@@ -99,7 +100,7 @@ class CAhandler(object):
                 try:
                     # pylint: disable=E1111
                     result = store_ctx.verify_certificate()
-                except BaseException as err_:
+                except Exception as err_:
                     result = str(err_)
             else:
                 result = error
@@ -249,7 +250,7 @@ class CAhandler(object):
         if 'issuing_ca_key_passphrase_variable' in config_dic['CAhandler']:
             try:
                 self.issuer_dict['passphrase'] = os.environ[config_dic['CAhandler']['issuing_ca_key_passphrase_variable']]
-            except BaseException as err:
+            except Exception as err:
                 self.logger.error('CAhandler._config_load() could not load issuing_ca_key_passphrase_variable:{0}'.format(err))
         if 'issuing_ca_key_passphrase' in config_dic['CAhandler']:
             if 'passphrase' in self.issuer_dict and self.issuer_dict['passphrase']:
@@ -280,7 +281,7 @@ class CAhandler(object):
             self.logger.error('CAhandler._config_load() found "blacklist" parameter in configfile which should be renamed to "blocked_domainlist"')
         try:
             self.cn_enforce = config_dic.getboolean('CAhandler', 'cn_enforce', fallback=False)
-        except BaseException:
+        except Exception:
             self.logger.error('CAhandler._config_load() variable cn_enforce cannot be parsed')
 
         self.save_cert_as_hex = config_dic.getboolean('CAhandler', 'save_cert_as_hex', fallback=False)
@@ -322,7 +323,7 @@ class CAhandler(object):
                     # SAN list must be modified/filtered)
                     (_san_type, san_value) = san.lower().split(':')
                     san_list.append(san_value)
-                except BaseException:
+                except Exception:
                     # force check to fail as something went wrong during parsing
                     check_list.append(False)
                     self.logger.debug('CAhandler._csr_check(): san_list parsing failed at entry: {0}'.format(san))
@@ -374,7 +375,7 @@ class CAhandler(object):
             if list_:
                 for regex in list_:
                     if regex.startswith('*.'):
-                       regex = regex.replace('*.', '.')
+                        regex = regex.replace('*.', '.')
                     regex_compiled = re.compile(regex)
                     if bool(regex_compiled.search(entry)):
                         # parameter is in set flag accordingly and stop loop
@@ -433,8 +434,30 @@ class CAhandler(object):
         self.logger.debug('CAhandler._string_wlbl_check({0}) ended with: {1}'.format(entry, chk_result))
         return chk_result
 
+    def _duplicates_clean(self, default_extension_list, csr_extension_list):
+        """ clean duplicate extensions """
+
+        extension_list = []
+        for csr_ext in csr_extension_list:
+            ext_in = False
+            csr_ext_name = csr_ext.get_short_name()
+
+            for def_ext in default_extension_list:
+                if csr_ext_name == def_ext.get_short_name():
+                    ext_in = True
+                    break
+
+            if not ext_in:
+                extension_list.append(csr_ext)
+
+        for def_ext in default_extension_list:
+            extension_list.append(def_ext)
+
+        return extension_list
+
     def enroll(self, csr):
         """ enroll certificate """
+        # pylint: disable=R0914, R0915
         self.logger.debug('CAhandler.enroll()')
 
         cert_bundle = None
@@ -476,7 +499,7 @@ class CAhandler(object):
                     cert.set_pubkey(req.get_pubkey())
                     cert.set_serial_number(uuid.uuid4().int)
                     cert.set_version(2)
-                    cert.add_extensions(req.get_extensions())
+                    # cert.add_extensions(req.get_extensions())
 
                     default_extension_list = [
                         crypto.X509Extension(convert_string_to_byte('subjectKeyIdentifier'), False, convert_string_to_byte('hash'), subject=cert),
@@ -487,10 +510,14 @@ class CAhandler(object):
 
                     if cert_extension_dic:
                         try:
-                            cert.add_extensions(self._certificate_extensions_add(cert_extension_dic, cert, ca_cert))
-                        except BaseException as err_:
+                            # remove duplicate extensions
+                            extension_list = self._duplicates_clean(default_extension_list, self._certificate_extensions_add(cert_extension_dic, cert, ca_cert))
+                        except Exception as err_:
                             self.logger.error('CAhandler.enroll() error while loading extensions form file. Use default set.\nerror: {0}'.format(err_))
-                            cert.add_extensions(default_extension_list)
+                            # remove duplicate extensions
+                            extension_list = self._duplicates_clean(default_extension_list, req.get_extensions())
+                        cert.add_extensions(extension_list)
+
                     else:
                         # add keyUsage if it does not exist in CSR
                         ku_is_in = False
@@ -500,8 +527,11 @@ class CAhandler(object):
                         if not ku_is_in:
                             default_extension_list.append(crypto.X509Extension(convert_string_to_byte('keyUsage'), True, convert_string_to_byte('digitalSignature,keyEncipherment')))
 
+                        # remove duplicate extensions
+                        extension_list = self._duplicates_clean(default_extension_list, req.get_extensions())
+
                         # add default extensions
-                        cert.add_extensions(default_extension_list)
+                        cert.add_extensions(extension_list)
 
                     cert.sign(ca_key, 'sha256')
 
@@ -513,7 +543,7 @@ class CAhandler(object):
                 else:
                     error = 'urn:ietf:params:acme:badCSR'
 
-            except BaseException as err:
+            except Exception as err:
                 self.logger.error('CAhandler.enroll() error: {0}'.format(err))
                 error = 'Unknown exception'
 
@@ -585,7 +615,7 @@ class CAhandler(object):
                 code = 400
                 message = 'urn:ietf:params:acme:error:serverInternal'
                 detail = 'configuration error'
-            #else:
+            # else:
             #    code = 400
             #    message = 'urn:ietf:params:acme:error:serverInternal'
             #    detail = result

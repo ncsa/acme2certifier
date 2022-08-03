@@ -1,12 +1,14 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-""" ca hanlder for Insta Certifier via REST-API class """
+# pylint: disable=c0209, e5110, r0902, r0912, r0915
+""" certificate class """
 from __future__ import print_function
 import json
-import importlib
-from acme_srv.helper import b64_url_recode, generate_random_string, ca_handler_get, cert_san_get, cert_extensions_get, uts_now, uts_to_date_utc, date_to_uts_utc, load_config, csr_san_get, csr_extensions_get, cert_dates_get
+from acme_srv.helper import b64_url_recode, generate_random_string, cert_san_get, cert_extensions_get, hooks_load, uts_now, uts_to_date_utc, date_to_uts_utc, load_config, csr_san_get, csr_extensions_get, cert_dates_get, ca_handler_load
 from acme_srv.db_handler import DBstore
 from acme_srv.message import Message
+from acme_srv.threadwithreturnvalue import ThreadWithReturnValue
+
 
 class Certificate(object):
     """ CA  handler """
@@ -17,10 +19,16 @@ class Certificate(object):
         self.logger = logger
         self.cahandler = None
         self.dbstore = DBstore(self.debug, self.logger)
+        self.hooks = None
+        self.ignore_pre_hook_failure = False
+        self.ignore_post_hook_failure = True
+        self.ignore_success_hook_failure = False
         self.message = Message(self.debug, self.server_name, self.logger)
-        self.path_dic = {'cert_path' : '/acme/cert/'}
+        self.path_dic = {'cert_path': '/acme/cert/'}
         self.retry_after = 600
         self.tnauthlist_support = False
+        self.cert_reusage_timeframe = 0
+        self.enrollment_timeout = 5
 
     def __enter__(self):
         """ Makes ACMEHandler a Context Manager """
@@ -35,7 +43,7 @@ class Certificate(object):
         self.logger.debug('Certificate.issuer_check()')
         try:
             result = self.dbstore.certificate_account_check(account_name, b64_url_recode(self.logger, certificate))
-        except BaseException as err_:
+        except Exception as err_:
             self.logger.critical('acme2certifier database error in Certificate._account_check(): {0}'.format(err_))
             result = None
         return result
@@ -50,7 +58,7 @@ class Certificate(object):
         # get identifiers for order
         try:
             identifier_dic = self.dbstore.order_lookup('name', order_name, ['identifiers'])
-        except BaseException as err_:
+        except Exception as err_:
             self.logger.critical('acme2certifier database error in Certificate._authorization_check(): {0}'.format(err_))
             identifier_dic = {}
 
@@ -58,7 +66,7 @@ class Certificate(object):
             # load identifiers
             try:
                 identifiers = json.loads(identifier_dic['identifiers'].lower())
-            except BaseException:
+            except Exception:
                 identifiers = []
 
             # check if we have a tnauthlist identifier
@@ -68,7 +76,7 @@ class Certificate(object):
                     # get list of certextensions in base64 format and identifier status
                     tnauthlist = cert_extensions_get(self.logger, certificate)
                     identifier_status = self._identifer_tnauth_list(identifier_dic, tnauthlist)
-                except BaseException as err_:
+                except Exception as err_:
                     # enough to set identifier_list as empty list
                     identifier_status = []
                     self.logger.warning('Certificate._authorization_check() error while loading parsing certifcate. Error: {0}'.format(err_))
@@ -77,7 +85,7 @@ class Certificate(object):
                     # get sans
                     san_list = cert_san_get(self.logger, certificate)
                     identifier_status = self._identifer_status_list(identifiers, san_list)
-                except BaseException as err_:
+                except Exception as err_:
                     # enough to set identifier_list as empty list
                     identifier_status = []
                     self.logger.warning('Certificate._authorization_check() error while loading parsing certifcate. Error: {0}'.format(err_))
@@ -89,32 +97,82 @@ class Certificate(object):
         self.logger.debug('Certificate._authorization_check() ended with {0}'.format(result))
         return result
 
+    def _cert_reusage_check(self, csr):
+        """ check if an existing certificate an be reused """
+        self.logger.debug('Certificate._cert_reusage_check({0})'.format(self.cert_reusage_timeframe))
+
+        try:
+            result_dic = self.dbstore.certificates_search('csr', csr, ('cert', 'cert_raw', 'expire_uts', 'issue_uts', 'created_at', 'id'))
+        except Exception as err_:
+            self.logger.critical('acme2certifier database error in Certificate._cert_reusage_check(): {0}'.format(err_))
+            result_dic = None
+
+        cert = None
+        cert_raw = None
+        message = None
+
+        if result_dic:
+            uts = uts_now()
+            # sort certificates by creation date
+            for certificate in sorted(result_dic, key=lambda i: i['issue_uts'], reverse=True):
+                try:
+                    uts_create = date_to_uts_utc(certificate['created_at'])
+                except Exception as _err:
+                    self.logger.error('acme2certifier date_to_uts_utc() error in Certificate._cert_reusage_check(): id:{0}/created_at:{1}'.format(certificate['id'], certificate['created_at']))
+                    uts_create = 0
+
+                # check if there certificates within reusage timeframe
+                if certificate['cert_raw'] and certificate['cert'] and uts - self.cert_reusage_timeframe <= uts_create:
+                    # exclude expired certificates
+                    if uts <= certificate['expire_uts']:
+                        cert = certificate['cert']
+                        cert_raw = certificate['cert_raw']
+                        message = 'reused certificate from id: {0}'.format(certificate['id'])
+                        break
+
+        self.logger.debug('Certificate._cert_reusage_check() ended with {0}'.format(message))
+        return(None, cert, cert_raw, message)
+
     def _config_load(self):
         """" load config from file """
         self.logger.debug('Certificate._config_load()')
         config_dic = load_config()
         if 'Order' in config_dic:
             self.tnauthlist_support = config_dic.getboolean('Order', 'tnauthlist_support', fallback=False)
-        if 'CAhandler' in config_dic and 'handler_file' in config_dic['CAhandler']:
-            try:
-                ca_handler_module = importlib.import_module(ca_handler_get(self.logger, config_dic['CAhandler']['handler_file']))
-            except BaseException as err_:
-                self.logger.critical('Certificate._config_load(): loading CAhandler configured in cfg failed with err: {0}'.format(err_))
-                try:
-                    ca_handler_module = importlib.import_module('acme_srv.ca_handler')
-                except BaseException as err_:
-                    ca_handler_module = None
-                    self.logger.critical('Certificate._config_load(): loading default EABHandler failed with err: {0}'.format(err_))
-        else:
-            if 'CAhandler' in config_dic:
-                ca_handler_module = importlib.import_module('acme_srv.ca_handler')
-            else:
-                self.logger.error('Certificate._config_load(): CAhandler configuration missing in config file')
-                ca_handler_module = None
+
+        # load ca_handler according to configuration
+        ca_handler_module = ca_handler_load(self.logger, config_dic)
 
         if ca_handler_module:
             # store handler in variable
             self.cahandler = ca_handler_module.CAhandler
+        else:
+            self.logger.critical('Certificate._config_load(): No ca_handler loaded')
+
+        # load hooks according to configuration
+        hooks_module = hooks_load(self.logger, config_dic)
+        if hooks_module:
+            try:
+                # store handler in variable
+                self.hooks = hooks_module.Hooks(self.logger)
+            except Exception as err:
+                self.logger.critical('Certificate._config_load(): Hooks could not be loaded: {0}'.format(err))
+
+            self.ignore_pre_hook_failure = config_dic.getboolean('Hooks', 'ignore_pre_hook_failure', fallback=False)
+            self.ignore_post_hook_failure = config_dic.getboolean('Hooks', 'ignore_post_hook_failure', fallback=True)
+            self.ignore_success_hook_failure = config_dic.getboolean('Hooks', 'ignore_success_hook_failure', fallback=False)
+
+        if 'Certificate' in config_dic:
+            if 'cert_reusage_timeframe' in config_dic['Certificate']:
+                try:
+                    self.cert_reusage_timeframe = int(config_dic['Certificate']['cert_reusage_timeframe'])
+                except Exception as err_:
+                    self.logger.error('acme2certifier Certificate._config_load() cert_reusage_timout parsing error: {0}'.format(err_))
+            if 'enrollment_timeout' in config_dic['Certificate']:
+                try:
+                    self.enrollment_timeout = int(config_dic['Certificate']['enrollment_timeout'])
+                except Exception as err_:
+                    self.logger.error('acme2certifier Certificate._config_load() enrollment_timeout parsing error: {0}'.format(err_))
 
         if 'Directory' in config_dic:
             if 'url_prefix' in config_dic['Directory']:
@@ -138,7 +196,7 @@ class Certificate(object):
             # get identifiers for order
             try:
                 identifier_dic = self.dbstore.order_lookup('name', certificate_dic['order'], ['identifiers'])
-            except BaseException as err_:
+            except Exception as err_:
                 self.logger.critical('acme2certifier database error in Certificate._csr_check(): {0}'.format(err_))
                 identifier_dic = {}
 
@@ -146,7 +204,7 @@ class Certificate(object):
                 # load identifiers
                 try:
                     identifiers = json.loads(identifier_dic['identifiers'].lower())
-                except BaseException:
+                except Exception:
                     identifiers = []
 
                 # do we need to check for tnauth
@@ -157,7 +215,7 @@ class Certificate(object):
                     try:
                         tnauthlist = csr_extensions_get(self.logger, csr)
                         identifier_status = self._identifer_tnauth_list(identifier_dic, tnauthlist)
-                    except BaseException as err_:
+                    except Exception as err_:
                         identifier_status = []
                         self.logger.warning('Certificate._csr_check() error while parsing csr.\nerror: {0}'.format(err_))
                 else:
@@ -165,7 +223,7 @@ class Certificate(object):
                     try:
                         san_list = csr_san_get(self.logger, csr)
                         identifier_status = self._identifer_status_list(identifiers, san_list)
-                    except BaseException as err_:
+                    except Exception as err_:
                         identifier_status = []
                         self.logger.warning('Certificate._csr_check() error while checking csr.\nerror: {0}'.format(err_))
 
@@ -177,6 +235,84 @@ class Certificate(object):
         self.logger.debug('Certificate._csr_check() ended with {0}'.format(csr_check_result))
         return csr_check_result
 
+    def _enroll_and_store(self, certificate_name, csr, order_name=None):
+        """ enroll and store certificate """
+        self.logger.debug('Certificate._enroll_and_store({0}, {1}, {2})'.format(certificate_name, order_name, csr))
+
+        detail = None
+        error = None
+
+        if self.hooks:
+            try:
+                self.hooks.pre_hook(certificate_name, order_name, csr)
+                self.logger.debug('Certificate._enroll_and_store(): pre_hook successful')
+            except Exception as err:
+                self.logger.error('Certificate._enroll_and_store(): pre_hook exception: {0}'.format(err))
+                if not self.ignore_pre_hook_failure:
+                    return (None, 'pre_hook_error', str(err))
+
+        with self.cahandler(self.debug, self.logger) as ca_handler:
+            if self.cert_reusage_timeframe:
+                (error, certificate, certificate_raw, poll_identifier) = self._cert_reusage_check(csr)
+            else:
+                certificate = None
+                certificate_raw = None
+
+            if not certificate or not certificate_raw:
+                self.logger.debug('Certificate._enroll_and_store(): trigger enrollment')
+                (error, certificate, certificate_raw, poll_identifier) = ca_handler.enroll(csr)
+            else:
+                self.logger.info('Certificate._enroll_and_store(): reuse existing certificate')
+
+            if certificate:
+                (issue_uts, expire_uts) = cert_dates_get(self.logger, certificate_raw)
+                try:
+                    result = self._store_cert(certificate_name, certificate, certificate_raw, issue_uts, expire_uts, poll_identifier)
+                    if result:
+                        self._order_update({'name': order_name, 'status': 'valid'})
+                    if self.hooks:
+                        try:
+                            self.hooks.success_hook(certificate_name, order_name, csr, certificate, certificate_raw, poll_identifier)
+                            self.logger.debug('Certificate._enroll_and_store: success_hook successful')
+                        except Exception as err:
+                            self.logger.error('Certificate._enroll_and_store: success_hook exception: {0}'.format(err))
+                            if not self.ignore_success_hook_failure:
+                                return (None, 'success_hook_error', str(err))
+
+                except Exception as err_:
+                    result = None
+                    self.logger.critical('acme2certifier database error in Certificate._enroll_and_store(): {0}'.format(err_))
+            else:
+                result = None
+                self.logger.error('acme2certifier enrollment error: {0}'.format(error))
+                # store error message for later analysis
+                try:
+                    if not poll_identifier:
+                        self.logger.debug('Certificate._enroll_and_store(): invalidating order as there is no certificate and no poll_identifier: {0}/{1}'.format(error, order_name))
+                        self._order_update({'name': order_name, 'status': 'invalid'})
+                    self._store_cert_error(certificate_name, error, poll_identifier)
+                except Exception as err_:
+                    result = None
+                    self.logger.critical('acme2certifier database error in Certificate._enroll_and_store() _store_cert_error: {0}'.format(err_))
+
+                # cover polling cases
+                if poll_identifier:
+                    detail = poll_identifier
+                else:
+                    error = 'urn:ietf:params:acme:error:serverInternal'
+
+        if self.hooks:
+            try:
+                self.hooks.post_hook(certificate_name, order_name, csr, error)
+                self.logger.debug('Certificate._enroll_and_store(): post_hook successful')
+            except Exception as err:
+                self.logger.error('Certificate._enroll_and_store(): post_hook exception: {0}'.format(err))
+                if not self.ignore_post_hook_failure:
+                    return (None, 'post_hook_error', str(err))
+
+        self.logger.debug('Certificate._enroll_and_store() ended with: {0}:{1}'.format(result, error))
+        return (result, error, detail)
+
     def _identifer_status_list(self, identifiers, san_list):
         """ compare identifiers and check if each san is in identifer list """
         self.logger.debug('Certificate._identifer_status_list()')
@@ -186,7 +322,7 @@ class Certificate(object):
             san_is_in = False
             try:
                 (cert_type, cert_value) = san.lower().split(':')
-            except BaseException:
+            except Exception:
                 cert_type = None
                 cert_value = None
 
@@ -213,7 +349,7 @@ class Certificate(object):
         # reload identifiers (case senetive)
         try:
             identifiers = json.loads(identifier_dic['identifiers'])
-        except BaseException:
+        except Exception:
             identifiers = []
 
         if tnauthlist and not identifier_dic:
@@ -240,7 +376,7 @@ class Certificate(object):
         self.logger.debug('Certificate._info({0})'.format(certificate_name))
         try:
             result = self.dbstore.certificate_lookup('name', certificate_name, flist)
-        except BaseException as err_:
+        except Exception as err_:
             self.logger.critical('acme2certifier database error in Certificate._info(): {0}'.format(err_))
             result = None
         return result
@@ -305,22 +441,30 @@ class Certificate(object):
             self.logger.debug('Certificate._invalidation_check() ended with {0}'.format(to_be_cleared))
         return (to_be_cleared, cert)
 
+    def _order_update(self, data_dic):
+        """ update order based on ordername """
+        self.logger.debug('Certificate._order_update({0})'.format(data_dic))
+        try:
+            self.dbstore.order_update(data_dic)
+        except Exception as err_:
+            self.logger.critical('acme2certifier database error in Certificate._order_update(): {0}'.format(err_))
+
     def _revocation_reason_check(self, reason):
         """ check reason """
         self.logger.debug('Certificate._revocation_reason_check({0})'.format(reason))
 
         # taken from https://tools.ietf.org/html/rfc5280#section-5.3.1
         allowed_reasons = {
-            0 : 'unspecified',
-            1 : 'keyCompromise',
-            # 2 : 'cACompromise',
-            3 : 'affiliationChanged',
-            4 : 'superseded',
-            5 : 'cessationOfOperation',
-            6 : 'certificateHold',
-            # 8 : 'removeFromCRL',
-            # 9 : 'privilegeWithdrawn',
-            # 10 : 'aACompromise'
+            0: 'unspecified',
+            1: 'keyCompromise',
+            # 2: 'cACompromise',
+            3: 'affiliationChanged',
+            4: 'superseded',
+            5: 'cessationOfOperation',
+            6: 'certificateHold',
+            # 8: 'removeFromCRL',
+            # 9: 'privilegeWithdrawn',
+            # 10: 'aACompromise'
         }
 
         result = allowed_reasons.get(reason, None)
@@ -364,13 +508,13 @@ class Certificate(object):
         self.logger.debug('Certificate._revocation_request_validate() ended with: {0}, {1}'.format(code, error))
         return (code, error)
 
-    def _store_cert(self, certificate_name, certificate, raw, issue_uts=0, expire_uts=0):
+    def _store_cert(self, certificate_name, certificate, raw, issue_uts=0, expire_uts=0, poll_identifier=None):
         """ get key for a specific account id """
         self.logger.debug('Certificate._store_cert({0})'.format(certificate_name))
-        data_dic = {'cert' : certificate, 'name': certificate_name, 'cert_raw' : raw, 'issue_uts': issue_uts, 'expire_uts': expire_uts}
+        data_dic = {'cert': certificate, 'name': certificate_name, 'cert_raw': raw, 'issue_uts': issue_uts, 'expire_uts': expire_uts, 'poll_identifier': poll_identifier}
         try:
             cert_id = self.dbstore.certificate_add(data_dic)
-        except BaseException as err_:
+        except Exception as err_:
             cert_id = None
             self.logger.critical('acme2certifier database error in Certificate._store_cert(): {0}'.format(err_))
         self.logger.debug('Certificate._store_cert({0}) ended'.format(cert_id))
@@ -379,10 +523,10 @@ class Certificate(object):
     def _store_cert_error(self, certificate_name, error, poll_identifier):
         """ get key for a specific account id """
         self.logger.debug('Certificate._store_cert_error({0})'.format(certificate_name))
-        data_dic = {'error' : error, 'name': certificate_name, 'poll_identifier': poll_identifier}
+        data_dic = {'error': error, 'name': certificate_name, 'poll_identifier': poll_identifier}
         try:
             cert_id = self.dbstore.certificate_add(data_dic)
-        except BaseException as err_:
+        except Exception as err_:
             cert_id = None
             self.logger.critical('acme2certifier database error in Certificate._store_cert(): {0}'.format(err_))
         self.logger.debug('Certificate._store_cert_error({0}) ended'.format(cert_id))
@@ -406,7 +550,7 @@ class Certificate(object):
         self.logger.debug('Certificate.certlist_search({0}: {1})'.format(key, value))
         try:
             result = self.dbstore.certificates_search(key, value, vlist)
-        except BaseException as err_:
+        except Exception as err_:
             self.logger.critical('acme2certifier database error in Certificate.certlist_search(): {0}'.format(err_))
             result = None
         return result
@@ -420,7 +564,7 @@ class Certificate(object):
         # get expired certificates
         try:
             certificate_list = self.dbstore.certificates_search('expire_uts', timestamp, field_list, '<=')
-        except BaseException as err_:
+        except Exception as err_:
             self.logger.critical('acme2certifier database error in Certificate.cleanup() search: {0}'.format(err_))
             certificate_list = []
 
@@ -443,14 +587,14 @@ class Certificate(object):
                 }
                 try:
                     self.dbstore.certificate_add(data_dic)
-                except BaseException as err_:
+                except Exception as err_:
                     self.logger.critical('acme2certifier database error in Certificate.cleanup() add: {0}'.format(err_))
         else:
             # delete entries from certificates table
             for cert in report_list:
                 try:
                     self.dbstore.certificate_delete('id', cert['id'])
-                except BaseException as err_:
+                except Exception as err_:
                     self.logger.critical('acme2certifier database error in Certificate.cleanup() delete: {0}'.format(err_))
         self.logger.debug('Certificate.cleanup() ended with: {0} certs'.format(len(report_list)))
         return (field_list, report_list)
@@ -469,43 +613,31 @@ class Certificate(object):
                             (issue_uts, expire_uts) = cert_dates_get(self.logger, cert['cert_raw'])
                             if issue_uts or expire_uts:
                                 self._store_cert(cert['name'], cert['cert'], cert['cert_raw'], issue_uts, expire_uts)
-        # return None
 
-    def enroll_and_store(self, certificate_name, csr):
-        """ cenroll and store certificater """
-        self.logger.debug('Certificate.enroll_and_store({0},{1})'.format(certificate_name, csr))
+    def enroll_and_store(self, certificate_name, csr, order_name=None):
+        """ check csr and trigger enrollment """
+        self.logger.debug('Certificate.enroll_and_store({0},{1})'.format(certificate_name, order_name))
 
         # check csr against order
         csr_check_result = self._csr_check(certificate_name, csr)
-        error = None
-        detail = None
 
         # only continue if self.csr_check returned True
         if csr_check_result:
-            with self.cahandler(self.debug, self.logger) as ca_handler:
-                (error, certificate, certificate_raw, poll_identifier) = ca_handler.enroll(csr)
-                if certificate:
-                    (issue_uts, expire_uts) = cert_dates_get(self.logger, certificate_raw)
-                    try:
-                        result = self._store_cert(certificate_name, certificate, certificate_raw, issue_uts, expire_uts)
-                    except BaseException as err_:
-                        result = None
-                        self.logger.critical('acme2certifier database error in Certificate.enroll_and_store(): {0}'.format(err_))
-                else:
+            twrv = ThreadWithReturnValue(target=self._enroll_and_store, args=(certificate_name, csr, order_name))
+            twrv.start()
+            enroll_result = twrv.join(timeout=self.enrollment_timeout)
+            if enroll_result:
+                try:
+                    (result, error, detail) = enroll_result
+                except Exception as err_:
+                    self.logger.error('acme2certifier database error in Certificate.enroll_and_store(): split of {0} failed with err: {1}'.format(enroll_result, err_))
                     result = None
-                    self.logger.error('acme2certifier enrollment error: {0}'.format(error))
-                    # store error message for later analysis
-                    try:
-                        self._store_cert_error(certificate_name, error, poll_identifier)
-                    except BaseException as err_:
-                        result = None
-                        self.logger.critical('acme2certifier database error in Certificate.enroll_and_store(): {0}'.format(err_))
-
-                    # cover polling cases
-                    if poll_identifier:
-                        detail = poll_identifier
-                    else:
-                        error = 'urn:ietf:params:acme:error:serverInternal'
+                    error = 'urn:ietf:params:acme:error:serverInternal'
+                    detail = 'unexpected enrollment result'
+            else:
+                result = None
+                error = 'timeout'
+                detail = 'timeout'
         else:
             result = None
             error = 'urn:ietf:params:acme:badCSR'
@@ -536,7 +668,7 @@ class Certificate(object):
                     response_dic['data'] = 'urn:ietf:params:acme:error:serverInternal'
             elif certificate_dic['order__status_id'] == 4:
                 # order status is processing - ratelimiting
-                response_dic['header'] = {'Retry-After':  '{0}'.format(self.retry_after)}
+                response_dic['header'] = {'Retry-After': '{0}'.format(self.retry_after)}
                 response_dic['code'] = 403
                 response_dic['data'] = 'urn:ietf:params:acme:error:rateLimited'
             else:
@@ -566,11 +698,11 @@ class Certificate(object):
                     detail = None
             else:
                 response_dic['code'] = code = 400
-                response_dic['data'] = message = 'urn:ietf:params:acme:error:malformed'
+                response_dic['data'] = type = 'urn:ietf:params:acme:error:malformed'
                 detail = 'url missing in protected header'
 
         # prepare/enrich response
-        status_dic = {'code': code, 'message' : message, 'detail' : detail}
+        status_dic = {'code': code, 'type': message, 'detail': detail}
         response_dic = self.message.prepare_response(response_dic, status_dic)
 
         # depending on the response the content of responsedic['data'] can be either string or dict
@@ -615,7 +747,7 @@ class Certificate(object):
                 detail = 'certificate not found'
 
         # prepare/enrich response
-        status_dic = {'code': code, 'message' : message, 'detail' : detail}
+        status_dic = {'code': code, 'type': message, 'detail': detail}
         response_dic = self.message.prepare_response(response_dic, status_dic)
 
         self.logger.debug('Certificate.revoke() ended with: {0}'.format(response_dic))
@@ -635,7 +767,7 @@ class Certificate(object):
                 # update order status to 5 (valid)
                 try:
                     self.dbstore.order_update({'name': order_name, 'status': 'valid'})
-                except BaseException as err_:
+                except Exception as err_:
                     self.logger.critical('acme2certifier database error in Certificate.poll(): {0}'.format(err_))
             else:
                 # store error message for later analysis
@@ -644,7 +776,7 @@ class Certificate(object):
                 if rejected:
                     try:
                         self.dbstore.order_update({'name': order_name, 'status': 'invalid'})
-                    except BaseException as err_:
+                    except Exception as err_:
                         self.logger.critical('acme2certifier database error in Certificate.poll(): {0}'.format(err_))
         self.logger.debug('Certificate.poll({0}: {1})'.format(certificate_name, poll_identifier))
         return _result
@@ -653,10 +785,10 @@ class Certificate(object):
         """ store csr into database """
         self.logger.debug('Certificate.store_csr({0})'.format(order_name))
         certificate_name = generate_random_string(self.logger, 12)
-        data_dic = {'order' : order_name, 'csr' : csr, 'name': certificate_name}
+        data_dic = {'order': order_name, 'csr': csr, 'name': certificate_name}
         try:
             self.dbstore.certificate_add(data_dic)
-        except BaseException as err_:
+        except Exception as err_:
             self.logger.critical('Database error in Certificate.store_csr(): {0}'.format(err_))
         self.logger.debug('Certificate.store_csr() ended')
         return certificate_name

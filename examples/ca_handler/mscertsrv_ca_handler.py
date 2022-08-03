@@ -7,10 +7,11 @@ import textwrap
 import json
 from OpenSSL import crypto
 from OpenSSL.crypto import _lib, _ffi, X509
-# pylint: disable=E0401
+# pylint: disable=E0401, E0611
 from examples.ca_handler.certsrv import Certsrv
 # pylint: disable=E0401
-from acme_srv.helper import load_config, b64_url_recode, convert_byte_to_string, parse_url, proxy_check
+from acme_srv.helper import load_config, b64_url_recode, convert_byte_to_string, proxy_check
+
 
 def _get_certificates(self):
     """
@@ -43,6 +44,7 @@ def _get_certificates(self):
         return None
     return tuple(pycerts)
 
+
 class CAhandler(object):
     """ EST CA  handler """
 
@@ -72,7 +74,7 @@ class CAhandler(object):
             try:
                 pkcs7 = crypto.load_pkcs7_data(filetype, pkcs7_content)
                 break
-            except BaseException as err:
+            except Exception as err:
                 self.logger.error('CAhandler._pkcs7_to_pem() failed with error: {0}'.format(err))
                 pkcs7 = None
 
@@ -124,7 +126,7 @@ class CAhandler(object):
                     ca_pem = self._pkcs7_to_pem(ca_pkcs7)
                     # replace crlf with lf
                     # ca_pem = ca_pem.replace('\r\n', '\n')
-                except BaseException as err_:
+                except Exception as err_:
                     ca_pem = None
                     self.logger.error('ca_server.get_chain() failed with error: {0}'.format(err_))
 
@@ -132,7 +134,7 @@ class CAhandler(object):
                     cert_raw = convert_byte_to_string(ca_server.get_cert(csr, self.template))
                     # replace crlf with lf
                     cert_raw = cert_raw.replace('\r\n', '\n')
-                except BaseException as err_:
+                except Exception as err_:
                     cert_raw = None
                     self.logger.error('ca_server.get_cert() failed with error: {0}'.format(err_))
 
@@ -163,7 +165,7 @@ class CAhandler(object):
             if 'host_variable' in config_dic['CAhandler']:
                 try:
                     self.host = os.environ[config_dic['CAhandler']['host_variable']]
-                except BaseException as err:
+                except Exception as err:
                     self.logger.error('CAhandler._config_load() could not load host_variable:{0}'.format(err))
             if 'host' in config_dic['CAhandler']:
                 if self.host:
@@ -172,7 +174,7 @@ class CAhandler(object):
             if 'user_variable' in config_dic['CAhandler']:
                 try:
                     self.user = os.environ[config_dic['CAhandler']['user_variable']]
-                except BaseException as err:
+                except Exception as err:
                     self.logger.error('CAhandler._config_load() could not load user_variable:{0}'.format(err))
             if 'user' in config_dic['CAhandler']:
                 if self.user:
@@ -181,7 +183,7 @@ class CAhandler(object):
             if 'password_variable' in config_dic['CAhandler']:
                 try:
                     self.password = os.environ[config_dic['CAhandler']['password_variable']]
-                except BaseException as err:
+                except Exception as err:
                     self.logger.error('CAhandler._config_load() could not load password_variable:{0}'.format(err))
             if 'password' in config_dic['CAhandler']:
                 if self.password:
@@ -200,8 +202,8 @@ class CAhandler(object):
                 proxy_list = json.loads(config_dic['DEFAULT']['proxy_server_list'])
                 proxy_server = proxy_check(self.logger, self.host, proxy_list)
                 self.proxy = {'http': proxy_server, 'https': proxy_server}
-            except BaseException as err_:
-                self.logger.warning('Challenge._config_load() proxy_server_list failed with error: {0}'.format(err_))
+            except Exception as err_:
+                self.logger.warning('CAhandler._config_load() proxy_server_list failed with error: {0}'.format(err_))
 
         self.logger.debug('CAhandler._config_load() ended')
 

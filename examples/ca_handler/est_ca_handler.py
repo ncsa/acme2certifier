@@ -4,13 +4,14 @@
 from __future__ import print_function
 import os
 import textwrap
-import requests
 import json
+import requests
 from requests.auth import HTTPBasicAuth
 from OpenSSL import crypto
 from OpenSSL.crypto import _lib, _ffi, X509
 # pylint: disable=E0401
 from acme_srv.helper import load_config, b64_decode, b64_url_recode, convert_byte_to_string, parse_url, proxy_check
+
 
 def _get_certificates(self):
     """
@@ -42,6 +43,7 @@ def _get_certificates(self):
     if not pycerts:
         return None
     return tuple(pycerts)
+
 
 class CAhandler(object):
     """ EST CA  handler """
@@ -78,7 +80,7 @@ class CAhandler(object):
                     self.logger.debug('CAhandler._cacerts_get() by using userid/password')
                     response = requests.get(self.est_host + '/cacerts', auth=HTTPBasicAuth(self.est_user, self.est_password), verify=self.ca_bundle, proxies=self.proxy)
                 pem = self._pkcs7_to_pem(b64_decode(self.logger, response.text))
-            except BaseException as err_:
+            except Exception as err_:
                 self.logger.error('CAhandler._cacerts_get() returned an error: {0}'.format(err_))
                 error = err_
                 pem = None
@@ -92,6 +94,7 @@ class CAhandler(object):
 
     def _config_load(self):
         """" load config from file """
+        # pylint: disable=R0912, R0915
         self.logger.debug('CAhandler._config_load()')
         config_dic = load_config(self.logger, 'CAhandler')
 
@@ -99,7 +102,7 @@ class CAhandler(object):
             if 'est_host_variable' in config_dic['CAhandler']:
                 try:
                     self.est_host = os.environ[config_dic['CAhandler']['est_host_variable']] + '/.well-known/est'
-                except BaseException as err:
+                except Exception as err:
                     self.logger.error('CAhandler._config_load() could not load est_host_variable:{0}'.format(err))
             if 'est_host' in config_dic['CAhandler']:
                 if self.est_host:
@@ -120,7 +123,7 @@ class CAhandler(object):
             if 'est_user_variable' in config_dic['CAhandler']:
                 try:
                     self.est_user = os.environ[config_dic['CAhandler']['est_user_variable']]
-                except BaseException as err:
+                except Exception as err:
                     self.logger.error('CAhandler._config_load() could not load est_user_variable:{0}'.format(err))
             if 'est_user' in config_dic['CAhandler']:
                 if self.est_user:
@@ -129,7 +132,7 @@ class CAhandler(object):
             if 'est_password_variable' in config_dic['CAhandler']:
                 try:
                     self.est_password = os.environ[config_dic['CAhandler']['est_password_variable']]
-                except BaseException as err:
+                except Exception as err:
                     self.logger.error('CAhandler._config_load() could not load est_password:{0}'.format(err))
             if 'est_password' in config_dic['CAhandler']:
                 if self.est_password:
@@ -148,7 +151,7 @@ class CAhandler(object):
             if 'ca_bundle' in config_dic['CAhandler']:
                 try:
                     self.ca_bundle = config_dic.getboolean('CAhandler', 'ca_bundle')
-                except BaseException:
+                except Exception:
                     self.ca_bundle = config_dic['CAhandler']['ca_bundle']
 
         if 'DEFAULT' in config_dic and 'proxy_server_list' in config_dic['DEFAULT']:
@@ -159,7 +162,7 @@ class CAhandler(object):
                     (fqdn, _port) = url_dic['host'].split(':')
                     proxy_server = proxy_check(self.logger, fqdn, proxy_list)
                     self.proxy = {'http': proxy_server, 'https': proxy_server}
-            except BaseException as err_:
+            except Exception as err_:
                 self.logger.warning('Challenge._config_load() proxy_server_list failed with error: {0}'.format(err_))
 
         self.logger.debug('CAhandler._config_load() ended')
@@ -171,7 +174,7 @@ class CAhandler(object):
             try:
                 pkcs7 = crypto.load_pkcs7_data(filetype, pkcs7_content)
                 break
-            except BaseException as _err:
+            except Exception as _err:
                 pkcs7 = None
 
         cert_pem_list = []
@@ -205,7 +208,7 @@ class CAhandler(object):
                 response = requests.post(self.est_host + '/simpleenroll', data=csr, auth=HTTPBasicAuth(self.est_user, self.est_password), headers=headers, verify=self.ca_bundle, proxies=self.proxy)
             # response.raise_for_status()
             pem = self._pkcs7_to_pem(b64_decode(self.logger, response.text))
-        except BaseException as err_:
+        except Exception as err_:
             self.logger.error('CAhandler._simpleenroll() returned an error: {0}'.format(err_))
             error = str(err_)
             pem = None

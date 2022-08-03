@@ -90,19 +90,19 @@ class TestACMEHandler(unittest.TestCase):
     def test_006_trigger_parse(self):
         """ Trigger.parse() with empty payload """
         payload = ""
-        result = {'header': {}, 'code': 400, 'data': {'detail': 'payload missing', 'message': 'malformed', 'status': 400}}
+        result = {'header': {}, 'code': 400, 'data': {'detail': 'payload missing', 'type': 'malformed', 'status': 400}}
         self.assertEqual(result, self.trigger.parse(payload))
 
     def test_007_trigger_parse(self):
         """ Trigger.parse() with wrong payload """
         payload = '{"foo": "bar"}'
-        result = {'header': {}, 'code': 400, 'data': {'detail': 'payload missing', 'message': 'malformed', 'status': 400}}
+        result = {'header': {}, 'code': 400, 'data': {'detail': 'payload missing', 'type': 'malformed', 'status': 400}}
         self.assertEqual(result, self.trigger.parse(payload))
 
     def test_008_trigger_parse(self):
         """ Trigger.parse() with empty payload key"""
         payload = '{"payload": ""}'
-        result = {'header': {}, 'code': 400, 'data': {'detail': 'payload empty', 'message': 'malformed', 'status': 400}}
+        result = {'header': {}, 'code': 400, 'data': {'detail': 'payload empty', 'type': 'malformed', 'status': 400}}
         self.assertEqual(result, self.trigger.parse(payload))
 
     @patch('acme_srv.trigger.Trigger._payload_process')
@@ -110,7 +110,7 @@ class TestACMEHandler(unittest.TestCase):
         """ Trigger.parse() with payload mock result 400"""
         payload = '{"payload": "foo"}'
         mock_process.return_value = (400, 'message', 'detail')
-        result = {'header': {}, 'code': 400, 'data': {'detail': 'detail', 'message': 'message', 'status': 400}}
+        result = {'header': {}, 'code': 400, 'data': {'detail': 'detail', 'type': 'message', 'status': 400}}
         self.assertEqual(result, self.trigger.parse(payload))
 
     @patch('acme_srv.trigger.Trigger._payload_process')
@@ -118,7 +118,7 @@ class TestACMEHandler(unittest.TestCase):
         """ Trigger.parse() with payload mock result 200"""
         payload = '{"payload": "foo"}'
         mock_process.return_value = (200, 'message', 'detail')
-        result = {'header': {}, 'code': 200, 'data': {'detail': 'detail', 'message': 'message', 'status': 200}}
+        result = {'header': {}, 'code': 200, 'data': {'detail': 'detail', 'type': 'message', 'status': 200}}
         self.assertEqual(result, self.trigger.parse(payload))
 
     def test_011_trigger__payload_process(self):
@@ -277,7 +277,7 @@ class TestACMEHandler(unittest.TestCase):
         mock_load_cfg.return_value = {}
         with self.assertLogs('test_a2c', level='INFO') as lcm:
             self.trigger._config_load()
-        self.assertIn('ERROR:test_a2c:Trigger._config_load(): CAhandler configuration missing in config file', lcm.output)
+        self.assertIn('ERROR:test_a2c:Helper.ca_handler_load(): CAhandler configuration missing in config file', lcm.output)
 
     @patch('acme_srv.trigger.Trigger._config_load')
     def test_023__enter__(self, mock_cfg):
@@ -295,18 +295,17 @@ class TestACMEHandler(unittest.TestCase):
         with self.assertLogs('test_a2c', level='INFO') as lcm:
             self.trigger._config_load()
         self.assertFalse(self.trigger.tnauthlist_support)
-        self.assertIn('ERROR:test_a2c:Trigger._config_load(): CAhandler configuration missing in config file', lcm.output)
+        self.assertIn('ERROR:test_a2c:Helper.ca_handler_load(): CAhandler configuration missing in config file', lcm.output)
 
     @patch('acme_srv.trigger.load_config')
     def test_025_config_load(self, mock_load_cfg):
-        """ test _config_load missing ca_handler """
+        """ test _config_load bogus ca_handler """
         parser = configparser.ConfigParser()
         parser['CAhandler'] = {'handler_file': 'foo'}
         mock_load_cfg.return_value = parser
         with self.assertLogs('test_a2c', level='INFO') as lcm:
             self.trigger._config_load()
-        self.assertIn("CRITICAL:test_a2c:Certificate._config_load(): loading CAhandler configured in cfg failed with err: No module named 'foo'", lcm.output)
-        # self.assertIn("CRITICAL:test_a2c:Certificate._config_load(): loading default CAhandler failed with err: No module named 'acme_srv.ca_handler'", lcm.output)
+        self.assertIn("CRITICAL:test_a2c:Helper.ca_handler_load(): loading CAhandler configured in cfg failed with err: 'NoneType' object has no attribute 'loader'", lcm.output)
 
     @patch('importlib.import_module')
     @patch('acme_srv.trigger.load_config')

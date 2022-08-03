@@ -3,6 +3,7 @@ A Python client for the Microsoft AD Certificate Services web page.
 
 https://github.com/magnuswatn/certsrv
 """
+# pylint: disable=C0415, R1720, R1705
 import os
 import re
 import base64
@@ -331,21 +332,23 @@ class Certsrv(object):
             self.session.close()
         self._set_credentials(username, password)
 
+
 def _get_ca_bundle():
     """Tries to find the platform ca bundle for the system (on linux systems)"""
     ca_bundles = [
         # list taken from https://golang.org/src/crypto/x509/root_linux.go
-        "/etc/ssl/certs/ca-certificates.crt",                # Debian/Ubuntu/Gentoo etc.
-        "/etc/pki/tls/certs/ca-bundle.crt",                  # Fedora/RHEL 6
-        "/etc/ssl/ca-bundle.pem",                            # OpenSUSE
-        "/etc/pki/tls/cacert.pem",                           # OpenELEC
-        "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", # CentOS/RHEL 7
+        "/etc/ssl/certs/ca-certificates.crt",                 # Debian/Ubuntu/Gentoo etc.
+        "/etc/pki/tls/certs/ca-bundle.crt",                   # Fedora/RHEL 6
+        "/etc/ssl/ca-bundle.pem",                             # OpenSUSE
+        "/etc/pki/tls/cacert.pem",                            # OpenELEC
+        "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",  # CentOS/RHEL 7
     ]
     for ca_bundle in ca_bundles:
         if os.path.isfile(ca_bundle):
             return ca_bundle
     # if the bundle was not found, we revert back to requests own
     return True
+
 
 def get_cert(server, csr, template, username, password, encoding="b64", **kwargs):
     """

@@ -8,6 +8,7 @@ from acme_srv.certificate import Certificate
 from acme_srv.db_handler import DBstore
 from acme_srv.message import Message
 
+
 class Order(object):
     """ class for order handling """
 
@@ -20,7 +21,7 @@ class Order(object):
         self.validity = 86400
         self.authz_validity = 86400
         self.expiry_check_disable = False
-        self.path_dic = {'authz_path' : '/acme/authz/', 'order_path' : '/acme/order/', 'cert_path' : '/acme/cert/'}
+        self.path_dic = {'authz_path': '/acme/authz/', 'order_path': '/acme/order/', 'cert_path': '/acme/cert/'}
         self.retry_after = 600
         self.tnauthlist_support = False
 
@@ -42,16 +43,16 @@ class Order(object):
 
         if 'identifiers' in payload:
 
-            data_dic = {'status' : 2,
-                        'expires' : expires,
-                        'account' : aname}
+            data_dic = {'status': 2,
+                        'expires': expires,
+                        'account': aname}
 
             data_dic['name'] = order_name
             data_dic['identifiers'] = json.dumps(payload['identifiers'])
 
-            #if 'notBefore' in payload:
+            # if 'notBefore' in payload:
             #    data_dic['notbefore'] = payload['notBefore']
-            #if 'notAfter' in payload:
+            # if 'notAfter' in payload:
             #    data_dic['notafter'] = payload['notAfter']
 
             # check identifiers
@@ -64,7 +65,7 @@ class Order(object):
             try:
                 # add order to db
                 oid = self.dbstore.order_add(data_dic)
-            except BaseException as err_:
+            except Exception as err_:
                 self.logger.critical('acme2certifier database error in Order._add() order: {0}'.format(err_))
                 oid = None
 
@@ -82,7 +83,7 @@ class Order(object):
                         auth['expires'] = uts_now() + self.authz_validity
                         try:
                             self.dbstore.authorization_add(auth)
-                        except BaseException as err_:
+                        except Exception as err_:
                             self.logger.critical('acme2certifier database error in Order._add() authz: {0}'.format(err_))
                 else:
                     error = 'urn:ietf:params:acme:error:malformed'
@@ -102,18 +103,18 @@ class Order(object):
             if 'retry_after_timeout' in config_dic['Order']:
                 try:
                     self.retry_after = int(config_dic['Order']['retry_after_timeout'])
-                except BaseException:
+                except Exception:
                     self.logger.warning('Order._config_load(): failed to parse retry_after: {0}'.format(config_dic['Order']['retry_after_timeout']))
             if 'validity' in config_dic['Order']:
                 try:
                     self.validity = int(config_dic['Order']['validity'])
-                except BaseException:
+                except Exception:
                     self.logger.warning('Order._config_load(): failed to parse validity: {0}'.format(config_dic['Order']['validity']))
         if 'Authorization' in config_dic:
             if 'validity' in config_dic['Authorization']:
                 try:
                     self.authz_validity = int(config_dic['Authorization']['validity'])
-                except BaseException:
+                except Exception:
                     self.logger.warning('Order._config_load(): failed to parse authz validity: {0}'.format(config_dic['Authorization']['validity']))
 
         if 'Directory' in config_dic:
@@ -161,7 +162,7 @@ class Order(object):
         self.logger.debug('Order._info({0})'.format(order_name))
         try:
             result = self.dbstore.order_lookup('name', order_name)
-        except BaseException as err_:
+        except Exception as err_:
             self.logger.critical('acme2certifier database error in Order._info(): {0}'.format(err_))
             result = None
         return result
@@ -181,8 +182,8 @@ class Order(object):
                 order_dic = self._info(order_name)
                 if 'status' in order_dic and order_dic['status'] == 'ready':
                     # update order_status / set to processing
-                    self._update({'name' : order_name, 'status': 'processing'})
-                    if  'csr' in payload:
+                    self._update({'name': order_name, 'status': 'processing'})
+                    if 'csr' in payload:
                         self.logger.debug('CSR found()')
                         # this is a new request
                         (code, certificate_name, detail) = self._csr_process(order_name, payload['csr'])
@@ -190,7 +191,10 @@ class Order(object):
                         if code == 200:
                             if not detail:
                                 # update order_status / set to valid
-                                self._update({'name' : order_name, 'status': 'valid'})
+                                self._update({'name': order_name, 'status': 'valid'})
+                        elif certificate_name == 'timeout':
+                            code = 200
+                            message = certificate_name
                         else:
                             message = certificate_name
                             detail = 'enrollment failed'
@@ -208,7 +212,7 @@ class Order(object):
                 # this is a polling request; lookup certificate
                 try:
                     cert_dic = self.dbstore.certificate_lookup('order__name', order_name)
-                except BaseException as err_:
+                except Exception as err_:
                     self.logger.critical('acme2certifier database error in Order._process(): {0}'.format(err_))
                     cert_dic = {}
                 if cert_dic:
@@ -238,7 +242,7 @@ class Order(object):
                 # certificate = Certificate(self.debug, self.server_name, self.logger)
                 certificate_name = certificate.store_csr(order_name, csr)
                 if certificate_name:
-                    (error, detail) = certificate.enroll_and_store(certificate_name, csr)
+                    (error, detail) = certificate.enroll_and_store(certificate_name, csr, order_name)
                     if not error:
                         code = 200
                         message = certificate_name
@@ -265,7 +269,7 @@ class Order(object):
         self.logger.debug('Order._update({0})'.format(data_dic))
         try:
             self.dbstore.order_update(data_dic)
-        except BaseException as err_:
+        except Exception as err_:
             self.logger.critical('acme2certifier database error in Order._update(): {0}'.format(err_))
 
     def _lookup(self, order_name):
@@ -288,11 +292,11 @@ class Order(object):
             if 'identifiers' in tmp_dic:
                 try:
                     order_dic['identifiers'] = json.loads(tmp_dic['identifiers'])
-                except BaseException:
+                except Exception:
                     self.logger.error('Order.lookup(): error while parsing the identifier {0}'.format(tmp_dic['identifiers']))
             try:
                 authz_list = self.dbstore.authorization_lookup('order__name', order_name, ['name', 'status__name'])
-            except BaseException as err_:
+            except Exception as err_:
                 self.logger.critical('acme2certifier database error in Order._lookup(): {0}'.format(err_))
                 authz_list = []
             if authz_list:
@@ -311,7 +315,7 @@ class Order(object):
                 # update orders status from pending to ready
                 if validity_list and 'status' in order_dic:
                     if False not in validity_list and order_dic['status'] == 'pending':
-                        self._update({'name' : order_name, 'status': 'ready'})
+                        self._update({'name': order_name, 'status': 'ready'})
 
         self.logger.debug('Order._lookup() ended')
         return order_dic
@@ -326,7 +330,7 @@ class Order(object):
         field_list = ['id', 'name', 'expires', 'identifiers', 'created_at', 'status__id', 'status__name', 'account__id', 'account__name', 'account__contact']
         try:
             order_list = self.dbstore.orders_invalid_search('expires', timestamp, vlist=field_list, operant='<=')
-        except BaseException as err_:
+        except Exception as err_:
             self.logger.critical('acme2certifier database error in Order._invalidate() search: {0}'.format(err_))
             order_list = []
         output_list = []
@@ -339,7 +343,7 @@ class Order(object):
                 data_dic = {'name': order['name'], 'status': 'invalid'}
                 try:
                     self.dbstore.order_update(data_dic)
-                except BaseException as err_:
+                except Exception as err_:
                     self.logger.critical('acme2certifier database error in Order._invalidate() upd: {0}'.format(err_))
 
         self.logger.debug('Order.invalidate() ended: {0} orders identified'.format(len(output_list)))
@@ -372,7 +376,7 @@ class Order(object):
                 message = error
                 detail = 'could not process order'
         # prepare/enrich response
-        status_dic = {'code': code, 'message' : message, 'detail' : detail}
+        status_dic = {'code': code, 'type': message, 'detail': detail}
         response_dic = self.message.prepare_response(response_dic, status_dic)
 
         self.logger.debug('Order.new() returns: {0}'.format(json.dumps(response_dic)))
@@ -425,7 +429,7 @@ class Order(object):
                     response_dic['data']['certificate'] = '{0}{1}{2}'.format(self.server_name, self.path_dic['cert_path'], certificate_name)
 
         # prepare/enrich response
-        status_dic = {'code': code, 'message' : message, 'detail' : detail}
+        status_dic = {'code': code, 'type': message, 'detail': detail}
         response_dic = self.message.prepare_response(response_dic, status_dic)
 
         self.logger.debug('Order.parse() returns: {0}'.format(json.dumps(response_dic)))

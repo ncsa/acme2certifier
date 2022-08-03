@@ -15,6 +15,7 @@ def dict_from_row(row):
     """ small helper to convert the output of a "select" command into a dictionary """
     return dict(zip(row.keys(), row))
 
+
 class CAhandler(object):
     """ CA  handler """
 
@@ -88,7 +89,7 @@ class CAhandler(object):
         self.cursor.execute(pre_statement, [self.issuing_ca_name])
         try:
             db_result = dict_from_row(self.cursor.fetchone())
-        except BaseException:
+        except Exception:
             self.logger.error('cert lookup failed: {0}'.format(self.cursor.fetchone()))
             db_result = {}
         self._db_close()
@@ -100,7 +101,7 @@ class CAhandler(object):
             try:
                 ca_cert = crypto.load_certificate(crypto.FILETYPE_ASN1, b64_decode(self.logger, db_result['cert']))
                 ca_id = db_result['id']
-            except BaseException as err_:
+            except Exception as err_:
                 self.logger.error('CAhandler._ca_cert_load() failed with error: {0}'.format(err_))
         return (ca_cert, ca_id)
 
@@ -114,7 +115,7 @@ class CAhandler(object):
         self.cursor.execute(pre_statement, [self.issuing_ca_key])
         try:
             db_result = dict_from_row(self.cursor.fetchone())
-        except BaseException as err_:
+        except Exception as err_:
             self.logger.error('key lookup failed: {0}'.format(self.cursor.fetchone()))
             db_result = {}
         self._db_close()
@@ -125,7 +126,7 @@ class CAhandler(object):
                 private_key = '-----BEGIN ENCRYPTED PRIVATE KEY-----\n{0}\n-----END ENCRYPTED PRIVATE KEY-----'.format(db_result['private'])
                 ca_key = crypto.load_privatekey(crypto.FILETYPE_PEM, private_key, convert_string_to_byte(self.passphrase))
 
-            except BaseException as err_:
+            except Exception as err_:
                 self.logger.error('CAhandler._ca_key_load() failed with error: {0}'.format(err_))
         else:
             self.logger.error('CAhandler._ca_key_load() failed to load key: {0}'.format(db_result))
@@ -179,7 +180,7 @@ class CAhandler(object):
         if 'passphrase_variable' in config_dic['CAhandler']:
             try:
                 self.passphrase = os.environ[config_dic['CAhandler']['passphrase_variable']]
-            except BaseException as err:
+            except Exception as err:
                 self.logger.error('CAhandler._config_load() could not load passphrase_variable:{0}'.format(err))
 
         if 'passphrase' in config_dic['CAhandler']:
@@ -197,7 +198,7 @@ class CAhandler(object):
         if 'ca_cert_chain_list' in config_dic['CAhandler']:
             try:
                 self.ca_cert_chain_list = json.loads(config_dic['CAhandler']['ca_cert_chain_list'])
-            except BaseException:
+            except Exception:
                 self.logger.error('CAhandler._config_load(): parameter "ca_cert_chain_list" cannot be loaded')
 
         if 'template_name' in config_dic['CAhandler']:
@@ -231,7 +232,7 @@ class CAhandler(object):
         if cert_dic:
             if all(key in cert_dic for key in ('item', 'serial', 'issuer', 'ca', 'cert', 'iss_hash', 'hash')):
                 # pylint: disable=R0916
-                if isinstance(cert_dic['item'], int) and isinstance(cert_dic['issuer'], int)  and isinstance(cert_dic['ca'], int) and isinstance(cert_dic['iss_hash'], int) and isinstance(cert_dic['iss_hash'], int) and isinstance(cert_dic['hash'], int):
+                if isinstance(cert_dic['item'], int) and isinstance(cert_dic['issuer'], int) and isinstance(cert_dic['ca'], int) and isinstance(cert_dic['iss_hash'], int) and isinstance(cert_dic['iss_hash'], int) and isinstance(cert_dic['hash'], int):
                     self._db_open()
                     self.cursor.execute('''INSERT INTO CERTS(item, serial, issuer, ca, cert, hash, iss_hash) VALUES(:item, :serial, :issuer, :ca, :cert, :hash, :iss_hash)''', cert_dic)
                     row_id = self.cursor.lastrowid
@@ -258,7 +259,7 @@ class CAhandler(object):
         cert_result = {}
         try:
             item_result = dict_from_row(self.cursor.fetchone())
-        except BaseException:
+        except Exception:
             self.logger.error('CAhandler._cert_search(): item search failed: {0}'.format(self.cursor.fetchone()))
             item_result = {}
 
@@ -268,7 +269,7 @@ class CAhandler(object):
             self.cursor.execute(pre_statement, [item_id])
             try:
                 cert_result = dict_from_row(self.cursor.fetchone())
-            except BaseException:
+            except Exception:
                 self.logger.error('CAhandler._cert_search(): cert search failed: item: {0}'.format(item_id))
 
         self._db_close()
@@ -308,7 +309,7 @@ class CAhandler(object):
 
         try:
             db_result = dict_from_row(self.cursor.fetchone())
-        except BaseException:
+        except Exception:
             db_result = {}
         self._db_close()
         self.logger.debug('CAhandler._csr_search() ended')
@@ -338,7 +339,7 @@ class CAhandler(object):
             if 'ekuCritical' in template_dic:
                 try:
                     ekuc = bool(int(template_dic['ekuCritical']))
-                except BaseException:
+                except Exception:
                     ekuc = False
             else:
                 ekuc = False
@@ -348,7 +349,7 @@ class CAhandler(object):
             # eku usage in extention
             try:
                 ekuc = csr_extensions_dic['extendedKeyUsage'].get_critical()
-            except BaseException:
+            except Exception:
                 ekuc = False
             eku_string = csr_extensions_dic['extendedKeyUsage'].__str__()
 
@@ -392,7 +393,7 @@ class CAhandler(object):
             if 'kuCritical' in template_dic:
                 try:
                     kuc = bool(int(template_dic['kuCritical']))
-                except BaseException:
+                except Exception:
                     kuc = False
             else:
                 kuc = False
@@ -420,7 +421,7 @@ class CAhandler(object):
         if kuval:
             try:
                 kuval = int(kuval)
-            except BaseException:
+            except Exception:
                 self.logger.error('CAhandler._kue_generate(): convert to int failed defaulting ku_val to 0')
                 kuval = 0
 
@@ -484,8 +485,8 @@ class CAhandler(object):
             san_list = csr_san_get(self.logger, csr)
             try:
                 (_identifiier, request_name,) = san_list[0].split(':')
-            except BaseException:
-                pass
+            except Exception:
+                self.logger.error('ERROR: CAhandler._request_name_get(): SAN split failed: {0}'.format(san_list))
 
         self.logger.debug('CAhandler._request_name_get() ended with: {0}'.format(request_name))
         return request_name
@@ -522,7 +523,7 @@ class CAhandler(object):
 
         try:
             db_result = dict_from_row(self.cursor.fetchone())
-        except BaseException:
+        except Exception:
             db_result = {}
         self._db_close()
         self.logger.debug('CAhandler._revocation_search() ended')
@@ -539,7 +540,7 @@ class CAhandler(object):
         row_id = self._item_insert(item_dic)
         # insert certificate to cert table
         cert_dic = {'item': row_id, 'serial': serial, 'issuer': ca_id, 'ca': 0, 'cert': cert, 'iss_hash': issuer_hash, 'hash': name_hash}
-        row_id = self._cert_insert(cert_dic)
+        _row_id = self._cert_insert(cert_dic)  # lgtm [py/unused-local-variable]
 
         self.logger.debug('CAhandler._store_cert() ended')
 
@@ -596,7 +597,7 @@ class CAhandler(object):
         self.cursor.execute(pre_statement, [self.template_name])
         try:
             db_result = dict_from_row(self.cursor.fetchone())
-        except BaseException:
+        except Exception:
             self.logger.error('template lookup failed: {0}'.format(self.cursor.fetchone()))
             db_result = {}
 
@@ -657,7 +658,7 @@ class CAhandler(object):
                     # remove last element from list if amount of list entries is uneven
                     parameter_list.pop()
                 # convert list into a directory
-                template_dic = {item : parameter_list[index+1] for index, item in enumerate(parameter_list) if index % 2 == 0}
+                template_dic = {item: parameter_list[index + 1] for index, item in enumerate(parameter_list) if index % 2 == 0}
 
         self.logger.debug('CAhandler._utf_stream_parse() ended: {0}'.format(bool(template_dic)))
         return template_dic
@@ -685,7 +686,7 @@ class CAhandler(object):
 
     def enroll(self, csr):
         """ enroll certificate  """
-        # pylint: disable=R0914
+        # pylint: disable=R0914, R0915
         self.logger.debug('CAhandler.enroll()')
 
         cert_bundle = None
@@ -696,7 +697,7 @@ class CAhandler(object):
             request_name = self._requestname_get(csr)
             if request_name:
                 # import CSR to database
-                _csr_info = self._csr_import(csr, request_name)
+                _csr_info = self._csr_import(csr, request_name)  # lgtm [py/unused-local-variable]
 
                 # prepare the CSR to be signed
                 csr = build_pem_file(self.logger, None, b64_url_recode(self.logger, csr), None, True)
@@ -719,7 +720,7 @@ class CAhandler(object):
                     cert = crypto.X509()
                     cert.set_pubkey(req.get_pubkey())
                     cert.set_version(2)
-                    cert.set_serial_number(uuid.uuid4().int & (1<<63)-1)
+                    cert.set_serial_number(uuid.uuid4().int & (1 << 63) - 1)
                     cert.set_issuer(ca_cert.get_subject())
 
                     # load template if configured
@@ -804,7 +805,7 @@ class CAhandler(object):
                 if 'bcCritical' in template_dic:
                     try:
                         bcc = bool(int(template_dic['bcCritical']))
-                    except BaseException:
+                    except Exception:
                         bcc = False
                 else:
                     bcc = False
